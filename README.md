@@ -91,6 +91,8 @@ CRON_SECRET=...                  # Vercel production cron auth
 
 Works on **testnet** without mainnet gas or NAVI.
 
+**Vercel Hobby:** cron limited to **once per day** (`0 12 * * *` in `vercel.json`). Real-time sync while users browse: `NEXT_PUBLIC_AUTO_SHIELD_KEEPER=true` polls `/api/keeper/sync` every 5 min from the browser.
+
 ---
 
 ## Demo script (~2 min)
