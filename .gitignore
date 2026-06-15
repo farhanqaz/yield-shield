@@ -19,9 +19,11 @@ move/**/.move/
 # OS / IDE
 .DS_Store
 *.log
+.idea/
+.vscode/
+
+# Cursor (local IDE config — not for public repo)
+.cursor/
 
 # Vercel
 app/.vercel
-
-# Vendored sui-pilot clone (install: see docs/SUI_PILOT.md)
-.cursor/sui-pilot/

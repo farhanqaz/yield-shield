@@ -295,9 +295,6 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
     );
   }
 
-  const vaultPct = CONFIG.smartSaveVaultBps / 100;
-  const liquidPct = (10000 - CONFIG.smartSaveVaultBps) / 100;
-
   return (
     <>
       <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
@@ -371,7 +368,7 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
                 onClick={() => void handleDeposit()}
                 className="rounded-xl bg-[var(--safe)] py-3 text-sm font-semibold text-black disabled:opacity-40"
               >
-                {isPending ? "Signing…" : `Save — ${vaultPct}% vault · ${liquidPct}% wallet`}
+                {isPending ? "Signing…" : "Save"}
               </button>
             </div>
 
