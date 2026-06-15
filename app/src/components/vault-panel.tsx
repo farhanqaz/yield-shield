@@ -377,7 +377,13 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
           <MetricTile
             label="SUI / USD"
             loading={pythLoading}
-            value={pyth ? `$${pyth.priceUsd.toFixed(4)}` : "—"}
+            value={
+              pyth
+                ? `$${pyth.priceUsd.toFixed(4)}`
+                : pythLoading
+                  ? "…"
+                  : "Unavailable"
+            }
           />
           <MetricTile
             label="Your position"
