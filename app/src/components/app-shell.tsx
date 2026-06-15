@@ -2,11 +2,10 @@
 
 import { ConnectButton } from "@mysten/dapp-kit";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { ReactNode } from "react";
-import { CONFIG } from "@/lib/config";
 import { EXPLORER } from "@/lib/explorer";
 import { Logo } from "./logo";
+import { CONFIG } from "@/lib/config";
 
 function NetworkPill() {
   const isMainnet = CONFIG.network === "mainnet";
@@ -30,49 +29,15 @@ export function AppShell({
   children: ReactNode;
   badge?: ReactNode;
 }) {
-  const pathname = usePathname();
-  const onSave = pathname?.startsWith("/save");
-
   return (
     <div className="app-bg">
       <header className="sticky top-0 z-50 border-b border-[var(--border)] bg-[rgba(6,10,18,0.85)] backdrop-blur-xl">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <Link href="/" className="flex items-center gap-3 transition opacity-90 hover:opacity-100">
+        <div className="mx-auto flex max-w-xl items-center justify-between gap-4 px-4 py-4">
+          <Link href="/" className="flex items-center gap-3">
             <Logo />
-            <div>
-              <p className="text-sm font-semibold leading-none text-[var(--text)]">
-                Yield Shield
-              </p>
-              <p className="mt-0.5 text-[10px] uppercase tracking-widest text-[var(--muted)]">
-                Sui · DeFi & Payments
-              </p>
-            </div>
+            <span className="text-sm font-semibold">Yield Shield</span>
           </Link>
-
-          <nav className="hidden items-center gap-1 sm:flex">
-            <Link
-              href="/"
-              className={`rounded-lg px-3 py-1.5 text-sm transition ${
-                !onSave
-                  ? "bg-white/5 text-[var(--text)]"
-                  : "text-[var(--muted)] hover:text-[var(--text)]"
-              }`}
-            >
-              Dashboard
-            </Link>
-            <Link
-              href="/save?amount=0.5"
-              className={`rounded-lg px-3 py-1.5 text-sm transition ${
-                onSave
-                  ? "bg-white/5 text-[var(--text)]"
-                  : "text-[var(--muted)] hover:text-[var(--text)]"
-              }`}
-            >
-              Smart Save
-            </Link>
-          </nav>
-
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {badge}
             <NetworkPill />
             <ConnectButton />
@@ -80,33 +45,26 @@ export function AppShell({
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">{children}</main>
+      <main className="mx-auto max-w-xl px-4 py-8 sm:py-10">{children}</main>
 
-      <footer className="border-t border-[var(--border)] py-8">
-        <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 px-4 text-center text-xs text-[var(--muted)] sm:flex-row sm:px-6 sm:text-left">
-          <p>Programmable savings with on-chain ShieldScore guardrails.</p>
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link href="/save?amount=0.5" className="transition hover:text-[var(--text)]">
-              Payment link
-            </Link>
-            <a
-              href={EXPLORER.vault()}
-              target="_blank"
-              rel="noreferrer"
-              className="transition hover:text-[var(--text)]"
-            >
-              Vault
-            </a>
-            <a
-              href="https://github.com/farhanqaz/yield-shield"
-              target="_blank"
-              rel="noreferrer"
-              className="transition hover:text-[var(--text)]"
-            >
-              GitHub
-            </a>
-          </div>
-        </div>
+      <footer className="border-t border-[var(--border)] py-6 text-center text-xs text-[var(--muted)]">
+        <a
+          href={EXPLORER.vault()}
+          target="_blank"
+          rel="noreferrer"
+          className="underline hover:text-[var(--text)]"
+        >
+          View vault
+        </a>
+        {" · "}
+        <a
+          href="https://github.com/farhanqaz/yield-shield"
+          target="_blank"
+          rel="noreferrer"
+          className="underline hover:text-[var(--text)]"
+        >
+          GitHub
+        </a>
       </footer>
     </div>
   );
