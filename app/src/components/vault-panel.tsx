@@ -30,9 +30,10 @@ import { usePythPrice } from "@/hooks/usePythPrice";
 import { useVault } from "@/hooks/useVault";
 import { useNaviApy, useNaviSupply } from "@/hooks/useNavi";
 import { useShieldKeeper } from "@/hooks/useShieldKeeper";
+import { usePortfolioLedger } from "@/hooks/usePortfolioLedger";
 import { SplitSlider } from "@/components/charts/split-slider";
 import { SplitPreview } from "@/components/charts/split-preview";
-import { PortfolioChart } from "@/components/charts/portfolio-chart";
+import { PortfolioPnl } from "@/components/portfolio-pnl";
 import { ShieldScoreChart } from "@/components/charts/shield-score-chart";
 
 const PYTH_REF_KEY = "yield-shield-pyth-ref-usd";
@@ -103,6 +104,9 @@ export function VaultPanel({
   );
 
   useShieldKeeper();
+
+  const { ledger, recordDeposit, recordWithdraw, setBasisFromSupply } =
+    usePortfolioLedger(account?.address);
 
   const { data: walletBalance } = useSuiClientQuery(
     "getBalance",
@@ -244,6 +248,8 @@ export function VaultPanel({
           receiptId: naviMode ? undefined : receiptId ?? undefined,
         }),
       async (_digest, objectChanges) => {
+        const vaultMist = (mist * BigInt(vaultBps)) / 10000n;
+        recordDeposit(vaultMist);
         if (naviMode) return;
         let id = findCreatedReceiptId(objectChanges);
         if (!id) {
@@ -275,7 +281,10 @@ export function VaultPanel({
       }
       runTx(
         () => buildNaviWithdrawTx(mist, account.address),
-        () => void refetchNavi(),
+        () => {
+          recordWithdraw(mist);
+          void refetchNavi();
+        },
       );
       return;
     }
@@ -301,6 +310,7 @@ export function VaultPanel({
         ),
       () => {
         if (mist >= total) clearReceiptId(account.address);
+        recordWithdraw(mist);
         void refreshReceipt();
       },
     );
@@ -350,10 +360,19 @@ export function VaultPanel({
         </div>
 
         <div className="mt-4">
-          <PortfolioChart
+          <PortfolioPnl
             vaultSui={vaultSuiNum}
             walletSui={walletSuiNum}
             priceUsd={pyth?.priceUsd}
+            apyPercent={naviApy}
+            shieldScore={score}
+            shieldStatus={status}
+            ledger={ledger}
+            onSetBasis={
+              naviMode && naviSupplyMist > 0n
+                ? () => setBasisFromSupply(naviSupplyMist)
+                : undefined
+            }
           />
         </div>
 

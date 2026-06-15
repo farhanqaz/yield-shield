@@ -31,7 +31,12 @@ export async function fetchNaviSuiSupplyMist(address: string): Promise<bigint> {
   const data = await naviFetch<{ supplyMist: string }>(
     `/api/navi/supply?address=${encodeURIComponent(address)}`,
   );
-  return BigInt(data.supplyMist);
+  try {
+    const raw = data.supplyMist?.split(".")[0] ?? "0";
+    return BigInt(raw || "0");
+  } catch {
+    return 0n;
+  }
 }
 
 export async function buildNaviSmartSaveTx(

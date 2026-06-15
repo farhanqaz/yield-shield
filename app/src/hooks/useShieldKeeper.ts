@@ -21,11 +21,10 @@ export function useShieldKeeper() {
       lastRun.current = now;
 
       void fetch("/api/keeper/sync", { method: "POST" }).catch(() => {
-        /* keeper optional — silent fail */
+        /* keeper optional — rate limit / gas errors are non-fatal */
       });
     };
 
-    tick();
     const id = setInterval(tick, POLL_MS);
     return () => clearInterval(id);
   }, []);

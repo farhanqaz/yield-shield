@@ -29,5 +29,6 @@ export function useNaviSupply(address?: string) {
 export function useNaviApy(): number | null {
   const { data: pool } = useNaviPool();
   if (!pool) return null;
-  return pool.apyPercent;
+  const apy = pool.apyPercent;
+  return Number.isFinite(apy) ? apy : null;
 }
