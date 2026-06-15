@@ -220,3 +220,38 @@ button[class*="connect"] {
 button[class*="connect"]:hover {
   border-color: var(--accent) !important;
 }
+
+.split-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--safe) 0%,
+    var(--safe) var(--split-pct, 85%),
+    var(--accent) var(--split-pct, 85%),
+    var(--accent) 100%
+  );
+  outline: none;
+}
+
+.split-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text);
+  border: 2px solid var(--safe);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.split-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text);
+  border: 2px solid var(--safe);
+  cursor: pointer;
+}

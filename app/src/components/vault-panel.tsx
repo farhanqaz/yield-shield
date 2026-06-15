@@ -7,7 +7,7 @@ import {
   useSuiClientQuery,
 } from "@mysten/dapp-kit";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { CONFIG, MIST_PER_SUI, isConfigured, showDemoControls } from "@/lib/config";
 import {
   buildResetMetricsTx,
@@ -18,10 +18,18 @@ import {
 import { volatilityBpsFromPrices } from "@/lib/pyth";
 import { EXPLORER } from "@/lib/explorer";
 import { buildSmartSaveTx, SMART_SAVE_GAS_BUFFER_MIST } from "@/lib/smart-save";
+import {
+  defaultVaultBps as getDefaultVaultBps,
+  loadVaultBps,
+  saveVaultBps,
+} from "@/lib/split-preference";
 import { useReceipt, storeReceiptId, clearReceiptId } from "@/hooks/useReceipt";
 import { usePythPrice } from "@/hooks/usePythPrice";
 import { useVault } from "@/hooks/useVault";
-import { SHIELD_STATUS } from "@/lib/config";
+import { SplitSlider } from "@/components/charts/split-slider";
+import { SplitPreview } from "@/components/charts/split-preview";
+import { PortfolioChart } from "@/components/charts/portfolio-chart";
+import { ShieldScoreChart } from "@/components/charts/shield-score-chart";
 
 const PYTH_REF_KEY = "yield-shield-pyth-ref-usd";
 
@@ -62,9 +70,11 @@ function mistFromInput(value: string): bigint | null {
 
 export function VaultPanel({
   defaultAmount = "0.1",
+  defaultVaultBps: initialVaultBps,
   paymentLink = false,
 }: {
   defaultAmount?: string;
+  defaultVaultBps?: number;
   paymentLink?: boolean;
 }) {
   const account = useCurrentAccount();
@@ -91,15 +101,25 @@ export function VaultPanel({
 
   const [depositAmount, setDepositAmount] = useState(defaultAmount);
   const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [vaultBps, setVaultBps] = useState(() =>
+    initialVaultBps ?? getDefaultVaultBps(),
+  );
   const [txStatus, setTxStatus] = useState<string | null>(null);
   const [txDigest, setTxDigest] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showDemo, setShowDemo] = useState(false);
   const [pythRefUsd, setPythRefUsd] = useState<number | null>(null);
 
   useEffect(() => {
     setDepositAmount(defaultAmount);
   }, [defaultAmount]);
+
+  useEffect(() => {
+    if (initialVaultBps != null) {
+      setVaultBps(initialVaultBps);
+      return;
+    }
+    setVaultBps(loadVaultBps());
+  }, [initialVaultBps]);
 
   useEffect(() => {
     const stored = localStorage.getItem(PYTH_REF_KEY);
@@ -117,8 +137,6 @@ export function VaultPanel({
   const depositsBlocked = vault?.status === 2;
   const score = vault?.score ?? 100;
   const status = (vault?.status ?? 0) as 0 | 1 | 2;
-  const statusLabel = SHIELD_STATUS[status].label;
-  const statusColor = SHIELD_STATUS[status].color;
   const demoControls = showDemoControls();
 
   const walletMist = walletBalance ? BigInt(walletBalance.totalBalance) : 0n;
@@ -126,6 +144,16 @@ export function VaultPanel({
     walletMist > SMART_SAVE_GAS_BUFFER_MIST
       ? walletMist - SMART_SAVE_GAS_BUFFER_MIST
       : 0n;
+
+  const vaultSuiNum = Number(shares) / Number(MIST_PER_SUI);
+  const walletSuiNum = Number(walletMist) / Number(MIST_PER_SUI);
+  const depositSuiNum = parseFloat(depositAmount) || 0;
+  const vaultPct = vaultBps / 100;
+
+  const handleVaultBpsChange = (bps: number) => {
+    setVaultBps(bps);
+    saveVaultBps(bps);
+  };
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["sui-client"] });
@@ -194,7 +222,7 @@ export function VaultPanel({
     runTx(
       () =>
         buildSmartSaveTx(mist, account.address, {
-          vaultRatioBps: CONFIG.smartSaveVaultBps,
+          vaultRatioBps: vaultBps,
           receiptId: receiptId ?? undefined,
         }),
       async (_digest, objectChanges) => {
@@ -261,168 +289,189 @@ export function VaultPanel({
   }
 
   return (
-    <section className="glass-card mx-auto max-w-xl p-6">
-      {/* Status strip */}
-      <div className="flex items-center justify-between gap-4 border-b border-[var(--border)] pb-4">
-        <div>
-          <p className="text-xs text-[var(--muted)]">ShieldScore</p>
-          <p className="font-mono text-2xl font-bold tabular-nums" style={{ color: statusColor }}>
-            {vaultLoading ? "…" : score}{" "}
-            <span className="text-sm font-medium">{statusLabel}</span>
-          </p>
-        </div>
-        <div className="text-right">
-          <p className="text-xs text-[var(--muted)]">You saved</p>
-          <p className="font-mono text-lg font-semibold tabular-nums">
-            {hasPosition ? `${formatSui(shares)} SUI` : "0 SUI"}
-          </p>
+    <div className="mx-auto max-w-xl space-y-4">
+      {/* Metrics + portfolio */}
+      <section className="glass-card p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          {vaultLoading ? (
+            <div className="skeleton h-16 w-40 rounded-xl" />
+          ) : (
+            <ShieldScoreChart score={score} status={status} compact />
+          )}
           {pyth && (
-            <p className="text-[10px] text-[var(--muted)]">
-              1 SUI ≈ ${pyth.priceUsd.toFixed(3)}
-            </p>
+            <div className="text-right text-xs text-[var(--muted)]">
+              <p>SUI / USD</p>
+              <p className="font-mono text-base font-semibold text-[var(--text)]">
+                ${pyth.priceUsd.toFixed(4)}
+              </p>
+            </div>
           )}
         </div>
-      </div>
 
-      {depositsBlocked && (
-        <p className="mt-4 rounded-lg bg-red-500/10 px-3 py-2 text-center text-xs text-red-300">
-          Deposits paused (high risk). Withdraw still works.
-        </p>
-      )}
+        <div className="mt-4">
+          <PortfolioChart
+            vaultSui={vaultSuiNum}
+            walletSui={walletSuiNum}
+            priceUsd={pyth?.priceUsd}
+          />
+        </div>
 
-      {!account ? (
-        <p className="mt-6 text-center text-sm text-[var(--muted)]">
-          Connect wallet above to continue.
-        </p>
-      ) : (
-        <div className="mt-6 space-y-6">
-          {/* Save */}
-          <div>
-            <label className="text-sm font-medium">Amount to save</label>
-            <div className="relative mt-2">
-              <input
-                type="number"
-                min="0.001"
-                step="0.01"
-                value={depositAmount}
-                onChange={(e) => setDepositAmount(e.target.value)}
+        {depositsBlocked && (
+          <p className="mt-4 rounded-lg bg-red-500/10 px-3 py-2 text-center text-xs text-red-300">
+            Deposits paused (high risk). Withdraw still works.
+          </p>
+        )}
+      </section>
+
+      {/* Save */}
+      <section className="glass-card p-5">
+        {!account ? (
+          <p className="text-center text-sm text-[var(--muted)]">
+            Connect wallet above to continue.
+          </p>
+        ) : (
+          <div className="space-y-5">
+            <div style={{ "--split-pct": `${vaultPct}%` } as CSSProperties}>
+              <SplitSlider
+                vaultBps={vaultBps}
+                onChange={handleVaultBpsChange}
                 disabled={depositsBlocked || isPending}
-                className="input-field"
               />
-              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs text-[var(--muted)]">
-                SUI
-              </span>
             </div>
-            <p className="mt-1 text-[11px] text-[var(--muted)]">
-              Wallet: {formatSui(spendableMist)} SUI available
-            </p>
-            <button
-              type="button"
-              disabled={isPending || depositsBlocked}
-              onClick={() => void handleDeposit()}
-              className="btn-primary mt-3 w-full py-3.5 text-sm"
-            >
-              {isPending ? "Signing…" : "Save"}
-            </button>
-          </div>
 
-          {/* Withdraw — hidden on payment link to keep that flow simple */}
-          {!paymentLink && (
-            <div className="border-t border-[var(--border)] pt-6">
-              <label className="text-sm font-medium">Withdraw from vault</label>
+            <div>
+              <label className="text-sm font-medium">Amount to save</label>
               <div className="relative mt-2">
                 <input
                   type="number"
                   min="0.001"
                   step="0.01"
-                  value={withdrawAmount}
-                  onChange={(e) => setWithdrawAmount(e.target.value)}
-                  disabled={!hasPosition || isPending}
-                  placeholder={hasPosition ? "0.0" : "Save first"}
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  disabled={depositsBlocked || isPending}
                   className="input-field"
                 />
                 <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs text-[var(--muted)]">
                   SUI
                 </span>
               </div>
-              <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  disabled={!hasPosition || isPending}
-                  onClick={() => setWithdrawAmount(formatSui(shares))}
-                  className="chip"
-                >
-                  Max
-                </button>
-                <button
-                  type="button"
-                  disabled={isPending || !hasPosition}
-                  onClick={() => void handleWithdraw()}
-                  className="btn-secondary flex-1 py-3 text-sm"
-                >
-                  {isPending ? "Signing…" : "Withdraw"}
-                </button>
-              </div>
+              <p className="mt-1 text-[11px] text-[var(--muted)]">
+                Available: {formatSui(spendableMist)} SUI
+              </p>
             </div>
-          )}
 
-          {demoControls && (
-            <details className="text-xs text-[var(--muted)]">
-              <summary className="cursor-pointer">Demo controls (testnet)</summary>
-              <div className="mt-2 flex flex-col gap-2">
-                <button
-                  type="button"
-                  disabled={isPending || !pyth?.priceUsd}
-                  onClick={handleSyncPyth}
-                  className="btn-secondary py-2"
-                >
-                  Sync score from Pyth
-                </button>
-                <div className="flex gap-2">
+            <SplitPreview
+              totalSui={depositSuiNum}
+              vaultBps={vaultBps}
+              priceUsd={pyth?.priceUsd}
+            />
+
+            <button
+              type="button"
+              disabled={isPending || depositsBlocked}
+              onClick={() => void handleDeposit()}
+              className="btn-primary w-full py-3.5 text-sm"
+            >
+              {isPending ? "Signing…" : "Save"}
+            </button>
+
+            {!paymentLink && (
+              <div className="border-t border-[var(--border)] pt-5">
+                <label className="text-sm font-medium">Withdraw from vault</label>
+                <div className="relative mt-2">
+                  <input
+                    type="number"
+                    min="0.001"
+                    step="0.01"
+                    value={withdrawAmount}
+                    onChange={(e) => setWithdrawAmount(e.target.value)}
+                    disabled={!hasPosition || isPending}
+                    placeholder={hasPosition ? "0.0" : "Save first"}
+                    className="input-field"
+                  />
+                  <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs text-[var(--muted)]">
+                    SUI
+                  </span>
+                </div>
+                <div className="mt-2 flex gap-2">
                   <button
                     type="button"
-                    disabled={isPending}
-                    onClick={() => runTx(() => buildStressTx())}
-                    className="btn-secondary flex-1 py-2 text-red-300"
+                    disabled={!hasPosition || isPending}
+                    onClick={() => setWithdrawAmount(formatSui(shares))}
+                    className="chip"
                   >
-                    Stress test
+                    Max
                   </button>
                   <button
                     type="button"
-                    disabled={isPending}
-                    onClick={() => runTx(() => buildResetMetricsTx())}
-                    className="btn-secondary flex-1 py-2"
+                    disabled={isPending || !hasPosition}
+                    onClick={() => void handleWithdraw()}
+                    className="btn-secondary flex-1 py-3 text-sm"
                   >
-                    Reset
+                    {isPending ? "Signing…" : "Withdraw"}
                   </button>
                 </div>
               </div>
-            </details>
-          )}
-        </div>
-      )}
+            )}
 
-      {txStatus && (
-        <p className="mt-4 text-center text-xs text-emerald-400">
-          {txStatus}
-          {txDigest && (
-            <>
-              {" · "}
-              <a
-                href={EXPLORER.tx(txDigest)}
-                target="_blank"
-                rel="noreferrer"
-                className="underline"
-              >
-                Explorer
-              </a>
-            </>
-          )}
-        </p>
-      )}
-      {error && (
-        <p className="mt-3 text-center text-xs text-red-400">{error}</p>
-      )}
-    </section>
+            {demoControls && (
+              <details className="text-xs text-[var(--muted)]">
+                <summary className="cursor-pointer">Demo controls (testnet)</summary>
+                <div className="mt-2 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    disabled={isPending || !pyth?.priceUsd}
+                    onClick={handleSyncPyth}
+                    className="btn-secondary py-2"
+                  >
+                    Sync score from Pyth
+                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => runTx(() => buildStressTx())}
+                      className="btn-secondary flex-1 py-2 text-red-300"
+                    >
+                      Stress test
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => runTx(() => buildResetMetricsTx())}
+                      className="btn-secondary flex-1 py-2"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+              </details>
+            )}
+          </div>
+        )}
+
+        {txStatus && (
+          <p className="mt-4 text-center text-xs text-emerald-400">
+            {txStatus}
+            {txDigest && (
+              <>
+                {" · "}
+                <a
+                  href={EXPLORER.tx(txDigest)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline"
+                >
+                  Explorer
+                </a>
+              </>
+            )}
+          </p>
+        )}
+        {error && (
+          <p className="mt-3 text-center text-xs text-red-400">{error}</p>
+        )}
+      </section>
+    </div>
   );
 }

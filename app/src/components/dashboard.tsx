@@ -7,17 +7,17 @@ import { AppShell } from "./app-shell";
 import { VaultPanel } from "./vault-panel";
 import { StatusBadge } from "./status-badge";
 import { useVault } from "@/hooks/useVault";
-import { CONFIG } from "@/lib/config";
+import { bpsToPercent, vaultBpsFromUrlParam } from "@/lib/split-preference";
 
 function DashboardInner() {
   const params = useSearchParams();
   const paymentAmount = params.get("amount");
+  const vaultFromUrl = vaultBpsFromUrlParam(params.get("vault"));
   const account = useCurrentAccount();
   const { vault } = useVault();
   const score = vault?.score ?? 100;
   const status = (vault?.status ?? 0) as 0 | 1 | 2;
-  const vaultPct = CONFIG.smartSaveVaultBps / 100;
-  const liquidPct = (10000 - CONFIG.smartSaveVaultBps) / 100;
+  const vaultPct = vaultFromUrl ? bpsToPercent(vaultFromUrl) : null;
 
   return (
     <AppShell badge={<StatusBadge status={status} score={score} />}>
@@ -30,8 +30,13 @@ function DashboardInner() {
               SUI
             </h1>
             <p className="mt-3 text-sm text-[var(--muted)]">
-              Payment link — one tap puts {vaultPct}% in the vault, {liquidPct}% back
-              in your wallet.
+              Payment link — choose your split, then save in one tap.
+              {vaultPct != null && (
+                <>
+                  {" "}
+                  Preset: <strong>{vaultPct}%</strong> vault.
+                </>
+              )}
             </p>
           </>
         ) : (
@@ -40,9 +45,9 @@ function DashboardInner() {
               Save SUI with guardrails
             </h1>
             <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
-              One tap saves your SUI — {vaultPct}% goes to a protected vault,{" "}
-              {liquidPct}% stays liquid in your wallet. ShieldScore blocks new deposits
-              when risk is high. You can withdraw anytime.
+              Set how much goes to vault vs wallet — every save splits automatically
+              in one transaction. ShieldScore pauses deposits when risk is high.
+              Withdraw anytime.
             </p>
           </>
         )}
@@ -56,6 +61,7 @@ function DashboardInner() {
 
       <VaultPanel
         defaultAmount={paymentAmount ?? "0.1"}
+        defaultVaultBps={vaultFromUrl ?? undefined}
         paymentLink={!!paymentAmount}
       />
     </AppShell>
