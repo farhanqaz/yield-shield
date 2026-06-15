@@ -19,7 +19,7 @@ export function Dashboard() {
           </h1>
           <p className="mt-1 max-w-sm text-xs text-[var(--muted)]">
             Payments become financial actions — Smart Save routes funds in one
-            PTB. ShieldScore pauses risk. Emergency Exit withdraws atomically.
+            PTB. ShieldScore pauses new deposits when risk spikes. Withdraw anytime.
           </p>
           {account && (
             <p className="mt-2 truncate font-mono text-[10px] text-[var(--muted)]">

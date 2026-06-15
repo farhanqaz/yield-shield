@@ -78,30 +78,42 @@ export function buildWithdrawTx(
   return tx;
 }
 
-/** Withdraw all shares from multiple receipts in one PTB. */
-export function buildWithdrawAllTx(
+/** Withdraw a specific amount across one or more receipts in one PTB. */
+export function buildWithdrawAmountTx(
   items: { receiptId: string; shares: bigint }[],
+  amountMist: bigint,
   sender: string,
   opts: TxBase = {},
 ): Transaction {
   const tx = new Transaction();
   const coinType = opts.coinType ?? CONFIG.coinType;
-  const active = items.filter((i) => i.shares > 0n);
-  if (active.length === 0) {
-    throw new Error("No vault shares to withdraw");
+  const sorted = [...items]
+    .filter((i) => i.shares > 0n)
+    .sort((a, b) => (a.shares > b.shares ? -1 : 1));
+
+  let remaining = amountMist;
+  const coins = [];
+
+  for (const item of sorted) {
+    if (remaining <= 0n) break;
+    const take = remaining < item.shares ? remaining : item.shares;
+    coins.push(
+      tx.moveCall({
+        target: `${pkg(opts)}::vault::withdraw`,
+        typeArguments: [coinType],
+        arguments: [
+          tx.object(opts.vaultId ?? CONFIG.vaultId),
+          tx.object(item.receiptId),
+          tx.pure.u64(take),
+        ],
+      }),
+    );
+    remaining -= take;
   }
 
-  const coins = active.map((item) =>
-    tx.moveCall({
-      target: `${pkg(opts)}::vault::withdraw`,
-      typeArguments: [coinType],
-      arguments: [
-        tx.object(opts.vaultId ?? CONFIG.vaultId),
-        tx.object(item.receiptId),
-        tx.pure.u64(item.shares),
-      ],
-    }),
-  );
+  if (remaining > 0n) {
+    throw new Error("Insufficient vault balance");
+  }
 
   const [primary, ...rest] = coins;
   if (rest.length > 0) {
@@ -109,6 +121,16 @@ export function buildWithdrawAllTx(
   }
   tx.transferObjects([primary], sender);
   return tx;
+}
+
+/** Withdraw all shares from multiple receipts in one PTB. */
+export function buildWithdrawAllTx(
+  items: { receiptId: string; shares: bigint }[],
+  sender: string,
+  opts: TxBase = {},
+): Transaction {
+  const total = items.reduce((sum, i) => sum + i.shares, 0n);
+  return buildWithdrawAmountTx(items, total, sender, opts);
 }
 
 /** Admin demo: spike risk metrics → vault pauses deposits. */

@@ -4,23 +4,16 @@ import {
   useCurrentAccount,
   useSignAndExecuteTransaction,
   useSuiClient,
+  useSuiClientQuery,
 } from "@mysten/dapp-kit";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { CONFIG, MIST_PER_SUI, isConfigured } from "@/lib/config";
 import {
-  CONFIG,
-  MIST_PER_SUI,
-  SHIELD_STATUS,
-  isConfigured,
-} from "@/lib/config";
-import {
-  buildDepositIntoReceiptTx,
-  buildDepositTx,
   buildResetMetricsTx,
   buildStressTx,
   buildSyncPythMetricsTx,
-  buildWithdrawTx,
-  buildWithdrawAllTx,
+  buildWithdrawAmountTx,
 } from "@/lib/transactions";
 import { volatilityBpsFromPrices } from "@/lib/pyth";
 import { EXPLORER } from "@/lib/explorer";
@@ -31,6 +24,7 @@ import { useVault } from "@/hooks/useVault";
 import { ScoreGauge } from "./score-gauge";
 
 const PYTH_REF_KEY = "yield-shield-pyth-ref-usd";
+const PERCENT_PRESETS = [25, 50, 75, 100] as const;
 
 function findCreatedReceiptId(
   objectChanges: Array<{
@@ -54,6 +48,48 @@ function findCreatedReceiptId(
   return null;
 }
 
+function formatSui(mist: bigint): string {
+  const n = Number(mist) / Number(MIST_PER_SUI);
+  if (n === 0) return "0";
+  if (n < 0.0001) return n.toExponential(2);
+  return n.toFixed(4).replace(/\.?0+$/, (m) => (m === "." ? "" : m));
+}
+
+function mistFromInput(value: string): bigint | null {
+  const n = parseFloat(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return BigInt(Math.floor(n * Number(MIST_PER_SUI)));
+}
+
+function PercentRow({
+  label,
+  onPick,
+  disabled,
+}: {
+  label: string;
+  onPick: (pct: number) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
+        {label}
+      </span>
+      {PERCENT_PRESETS.map((pct) => (
+        <button
+          key={pct}
+          type="button"
+          disabled={disabled}
+          onClick={() => onPick(pct)}
+          className="rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--muted)] transition hover:border-[var(--safe)] hover:text-[var(--text)] disabled:opacity-40"
+        >
+          {pct === 100 ? "Max" : `${pct}%`}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }) {
   const account = useCurrentAccount();
   const client = useSuiClient();
@@ -61,21 +97,25 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
   const { mutate: signAndExecute, isPending } = useSignAndExecuteTransaction();
 
   const { vault, isPending: vaultLoading } = useVault();
-  const { receipts, receiptId, shares, hasPosition, isLoading: receiptLoading, refreshReceipt, syncReceiptFromChain } = useReceipt(
-    account?.address,
-  );
+  const {
+    receipts,
+    receiptId,
+    shares,
+    hasPosition,
+    isLoading: receiptLoading,
+    refreshReceipt,
+    syncReceiptFromChain,
+  } = useReceipt(account?.address);
   const { data: pyth, isLoading: pythLoading } = usePythPrice();
 
-  const [amount, setAmount] = useState(defaultAmount);
-  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const { data: walletBalance } = useSuiClientQuery(
+    "getBalance",
+    { owner: account?.address ?? "" },
+    { enabled: !!account },
+  );
 
-  useEffect(() => {
-    if (hasPosition) {
-      setWithdrawAmount((Number(shares) / 1e9).toFixed(4));
-    } else {
-      setWithdrawAmount("");
-    }
-  }, [hasPosition, shares]);
+  const [depositAmount, setDepositAmount] = useState(defaultAmount);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
   const [txStatus, setTxStatus] = useState<string | null>(null);
   const [txDigest, setTxDigest] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -98,15 +138,19 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
   const depositsBlocked = vault?.status === 2;
   const score = vault?.score ?? 100;
   const status = (vault?.status ?? 0) as 0 | 1 | 2;
-  const statusColor = SHIELD_STATUS[status].color;
-  const emergencyRecommended = status >= 1 && hasPosition;
+
+  const walletMist = walletBalance ? BigInt(walletBalance.totalBalance) : 0n;
+  const spendableMist =
+    walletMist > SMART_SAVE_GAS_BUFFER_MIST
+      ? walletMist - SMART_SAVE_GAS_BUFFER_MIST
+      : 0n;
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["sui-client"] });
   };
 
   const runTx = (
-    build: () => ReturnType<typeof buildDepositTx>,
+    build: () => ReturnType<typeof buildSmartSaveTx>,
     onSuccess?: (
       digest: string,
       objectChanges?: Parameters<typeof findCreatedReceiptId>[0],
@@ -144,9 +188,9 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
         onError: (e) => {
           const msg =
             e.message === "Unexpected error"
-              ? "Transaction failed — try a smaller amount (keep ~0.02 SUI for gas) or use Direct vault deposit."
+              ? "Transaction failed — try a smaller amount (keep ~0.02 SUI for gas)."
               : e.message === "Could not parse effects from transaction result."
-                ? "Transaction may have succeeded — refresh the page and check your wallet balance."
+                ? "Transaction may have succeeded — refresh and check your wallet."
                 : e.message;
           setError(msg);
           setTxStatus(null);
@@ -155,30 +199,28 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
     );
   };
 
-  const handleSmartSave = async () => {
+  const setDepositFromPercent = (pct: number) => {
+    if (spendableMist <= 0n) return;
+    const mist = (spendableMist * BigInt(pct)) / 100n;
+    setDepositAmount(formatSui(mist));
+  };
+
+  const setWithdrawFromPercent = (pct: number) => {
+    if (shares <= 0n) return;
+    const mist = (shares * BigInt(pct)) / 100n;
+    setWithdrawAmount(formatSui(mist));
+  };
+
+  const handleDeposit = async () => {
     if (!account) return;
-    const mist = BigInt(Math.floor(parseFloat(amount) * Number(MIST_PER_SUI)));
-    if (mist <= BigInt(0)) {
-      setError("Enter a valid amount");
+    const mist = mistFromInput(depositAmount);
+    if (!mist) {
+      setError("Enter a valid deposit amount");
       return;
     }
-
-    if (CONFIG.enableNavi) {
-      setError("NAVI composable PTB is mainnet-only. Use Smart Save on testnet.");
+    if (mist + SMART_SAVE_GAS_BUFFER_MIST > walletMist) {
+      setError("Amount too high — keep ~0.02 SUI for gas.");
       return;
-    }
-
-    try {
-      const { totalBalance } = await client.getBalance({ owner: account.address });
-      const balance = BigInt(totalBalance);
-      if (mist + SMART_SAVE_GAS_BUFFER_MIST > balance) {
-        setError(
-          `Need ~${(Number(mist + SMART_SAVE_GAS_BUFFER_MIST) / 1e9).toFixed(3)} SUI total (amount + gas buffer). Lower the amount or add testnet SUI.`,
-        );
-        return;
-      }
-    } catch {
-      // balance check failed — still attempt tx
     }
 
     runTx(
@@ -205,67 +247,33 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
     if (!account) return;
     setError(null);
 
+    const mist = mistFromInput(withdrawAmount);
+    if (!mist) {
+      setError("Enter a valid withdraw amount");
+      return;
+    }
+
     const active = receipts.length > 0 ? receipts : await syncReceiptFromChain();
     if (active.length === 0) {
-      setError("No vault position found — deposit first.");
+      setError("No vault position — deposit first.");
       return;
     }
 
     const total = active.reduce((s, r) => s + r.shares, 0n);
-    const withdrawMist = BigInt(
-      Math.floor(parseFloat(withdrawAmount || "0") * Number(MIST_PER_SUI)),
-    );
-    if (withdrawMist <= 0n || withdrawMist > total) {
-      setError(`Enter 0.001 – ${(Number(total) / 1e9).toFixed(4)} SUI`);
-      return;
-    }
-
-    // Withdraw all if amount equals total (may span multiple receipts)
-    if (withdrawMist === total) {
-      runTx(
-        () =>
-          buildWithdrawAllTx(
-            active.map((r) => ({ receiptId: r.id, shares: r.shares })),
-            account.address,
-          ),
-        () => {
-          clearReceiptId(account.address);
-          void refreshReceipt();
-        },
-      );
-      return;
-    }
-
-    const primary = active[0];
-    if (withdrawMist > primary.shares) {
-      setError("Partial withdraw > largest receipt — use Emergency Exit for full amount.");
-      return;
-    }
-
-    runTx(
-      () => buildWithdrawTx(withdrawMist, primary.id, account.address),
-      () => void refreshReceipt(),
-    );
-  };
-
-  const handleEmergencyExit = async () => {
-    if (!account) return;
-    setError(null);
-
-    const active = receipts.length > 0 ? receipts : await syncReceiptFromChain();
-    if (active.length === 0) {
-      setError("No vault balance to withdraw.");
+    if (mist > total) {
+      setError(`Max withdraw: ${formatSui(total)} SUI`);
       return;
     }
 
     runTx(
       () =>
-        buildWithdrawAllTx(
+        buildWithdrawAmountTx(
           active.map((r) => ({ receiptId: r.id, shares: r.shares })),
+          mist,
           account.address,
         ),
       () => {
-        clearReceiptId(account.address);
+        if (mist >= total) clearReceiptId(account.address);
         void refreshReceipt();
       },
     );
@@ -273,25 +281,22 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
 
   const handleSyncPyth = () => {
     if (!pyth?.priceUsd || !pythRefUsd) return;
-    const volBps = volatilityBpsFromPrices(pyth.priceUsd, pythRefUsd);
-    runTx(() => buildSyncPythMetricsTx(volBps));
+    runTx(() => buildSyncPythMetricsTx(volatilityBpsFromPrices(pyth.priceUsd, pythRefUsd)));
   };
-
-  const handleStress = () => runTx(() => buildStressTx());
-  const handleReset = () => runTx(() => buildResetMetricsTx());
 
   if (!configured) {
     return (
       <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-6 text-sm">
         <p className="font-medium text-amber-200">Contract not configured</p>
         <p className="mt-2 text-[var(--muted)]">
-          Copy <code className="text-xs">.env.local.example</code> →{" "}
-          <code className="text-xs">.env.local</code> and fill package / vault
-          IDs after deploy.
+          Fill <code className="text-xs">.env.local</code> with package and vault IDs.
         </p>
       </div>
     );
   }
+
+  const vaultPct = CONFIG.smartSaveVaultBps / 100;
+  const liquidPct = (10000 - CONFIG.smartSaveVaultBps) / 100;
 
   return (
     <>
@@ -299,214 +304,142 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-lg font-medium">Risk radar</h2>
           <span className="rounded-full bg-[var(--bg)] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[var(--muted)]">
-            Pyth{CONFIG.enableNavi ? " · NAVI" : ""} · PTB
+            Pyth · PTB
           </span>
         </div>
 
         {vaultLoading && !vault ? (
-          <p className="py-8 text-center text-sm text-[var(--muted)]">Loading vault…</p>
+          <p className="py-8 text-center text-sm text-[var(--muted)]">Loading…</p>
         ) : (
           <ScoreGauge score={score} status={status} />
         )}
 
-        <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-4 py-3 text-sm">
-          <div className="flex justify-between">
-            <span className="text-[var(--muted)]">Pyth SUI/USD</span>
-            <span className="font-mono tabular-nums">
-              {pythLoading
-                ? "…"
-                : pyth
-                  ? `$${pyth.priceUsd.toFixed(4)}`
-                  : "—"}
-            </span>
-          </div>
-          <div className="mt-1 flex justify-between text-xs text-[var(--muted)]">
-            <span>Your position</span>
-            <span>
-              {hasPosition
-                ? `${(Number(shares) / 1e9).toFixed(4)} SUI`
-                : receiptLoading
-                  ? "Loading…"
-                  : "None"}
-            </span>
-          </div>
-          {receipts.length > 1 && (
-            <p className="mt-1 text-[10px] text-[var(--muted)]">
-              {receipts.length} active receipts — total shown above
+        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2">
+            <p className="text-[10px] uppercase text-[var(--muted)]">Pyth SUI/USD</p>
+            <p className="mt-0.5 font-mono tabular-nums">
+              {pythLoading ? "…" : pyth ? `$${pyth.priceUsd.toFixed(4)}` : "—"}
             </p>
-          )}
+          </div>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 py-2">
+            <p className="text-[10px] uppercase text-[var(--muted)]">In vault</p>
+            <p className="mt-0.5 font-mono tabular-nums">
+              {hasPosition
+                ? `${formatSui(shares)} SUI`
+                : receiptLoading
+                  ? "…"
+                  : "—"}
+            </p>
+          </div>
         </div>
 
         {depositsBlocked && (
-          <p className="mt-4 rounded-lg border border-[var(--paused)]/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
-            Circuit breaker active — new deposits blocked. Use Emergency Exit to
-            withdraw atomically via PTB.
+          <p className="mt-3 rounded-lg border border-[var(--paused)]/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            Deposits paused — withdraw still available.
           </p>
         )}
       </section>
 
       <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
-        <h2 className="mb-1 text-lg font-medium">Programmable Save</h2>
-        <p className="mb-4 text-xs text-[var(--muted)]">
-          One PTB — incoming funds auto-route to guarded vault
-          {CONFIG.enableNavi ? " + NAVI yield" : ""} with liquid buffer kept in
-          wallet. No manual orchestration.
-        </p>
+        <h2 className="text-lg font-medium">Vault</h2>
 
         {!account ? (
-          <p className="text-sm text-[var(--muted)]">
-            Connect wallet to use Yield Shield.
-          </p>
+          <p className="mt-3 text-sm text-[var(--muted)]">Connect wallet to continue.</p>
         ) : (
-          <div className="flex flex-col gap-3">
-            <section className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-4">
-              <h3 className="text-sm font-medium">Withdraw from vault</h3>
-              <p className="mt-1 text-xs text-[var(--muted)]">
-                Pull SUI from your ShieldReceipt back to wallet (always allowed,
-                even when Paused).
-              </p>
-
-              {hasPosition ? (
-                <div className="mt-3 flex flex-col gap-2">
-                  <label className="flex flex-col gap-1 text-sm">
-                    <span className="text-[var(--muted)]">Withdraw amount (SUI)</span>
-                    <input
-                      type="number"
-                      min="0.001"
-                      step="0.01"
-                      max={(Number(shares) / 1e9).toString()}
-                      value={withdrawAmount}
-                      onChange={(e) => setWithdrawAmount(e.target.value)}
-                      className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 outline-none focus:border-[var(--safe)]"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => void handleWithdraw()}
-                    className="rounded-xl border border-[var(--border)] px-4 py-3 text-sm font-semibold"
-                  >
-                    {isPending ? "Signing…" : "Withdraw to wallet"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={handleEmergencyExit}
-                    className="rounded-xl px-4 py-3 text-sm font-bold text-white"
-                    style={{
-                      backgroundColor: emergencyRecommended
-                        ? "var(--paused)"
-                        : "#b91c1c",
-                      boxShadow: emergencyRecommended
-                        ? `0 0 24px ${statusColor}55`
-                        : undefined,
-                    }}
-                  >
-                    Emergency Exit — withdraw all (PTB)
-                  </button>
-                </div>
-              ) : (
-                <p className="mt-3 text-xs text-[var(--muted)]">
-                  No vault position yet. Use Smart Save or deposit below.
-                </p>
-              )}
-            </section>
-
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-[var(--muted)]">Deposit amount (SUI)</span>
+          <div className="mt-4 flex flex-col gap-5">
+            {/* Deposit */}
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-medium text-[var(--muted)]">Deposit</p>
               <input
                 type="number"
                 min="0.001"
                 step="0.01"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                disabled={depositsBlocked}
-                className="rounded-xl border border-[var(--border)] bg-[var(--bg)] px-4 py-3 outline-none focus:border-[var(--safe)] disabled:opacity-50"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                disabled={depositsBlocked || isPending}
+                placeholder="0.0"
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-4 py-3 font-mono text-sm outline-none focus:border-[var(--safe)] disabled:opacity-50"
               />
-            </label>
-
-            <button
-              type="button"
-              disabled={isPending || depositsBlocked}
-              onClick={handleSmartSave}
-              className="rounded-xl bg-[var(--safe)] px-4 py-3 text-sm font-semibold text-black disabled:opacity-40"
-            >
-              {isPending
-                ? "Signing…"
-                : `Smart Save — ${CONFIG.smartSaveVaultBps / 100}% vault / ${(10000 - CONFIG.smartSaveVaultBps) / 100}% liquid (1 PTB)`}
-            </button>
-
-            <details className="text-xs text-[var(--muted)]">
-              <summary className="cursor-pointer underline">Direct vault deposit</summary>
+              <PercentRow
+                label="Of wallet"
+                disabled={depositsBlocked || isPending || spendableMist <= 0n}
+                onPick={setDepositFromPercent}
+              />
               <button
                 type="button"
                 disabled={isPending || depositsBlocked}
-                onClick={() => {
-                  if (!account) return;
-                  const mist = BigInt(
-                    Math.floor(parseFloat(amount) * Number(MIST_PER_SUI)),
-                  );
-                  if (mist <= BigInt(0)) {
-                    setError("Enter a valid amount");
-                    return;
-                  }
-                  if (hasPosition && receiptId) {
-                    runTx(() => buildDepositIntoReceiptTx(mist, receiptId));
-                  } else {
-                    runTx(() => buildDepositTx(mist, account.address), async (_digest, objectChanges) => {
-                      let id = findCreatedReceiptId(objectChanges);
-                      if (!id) {
-                        const synced = await syncReceiptFromChain();
-                        id = synced[0]?.id ?? null;
-                      }
-                      if (id) {
-                        storeReceiptId(account.address, id);
-                        await refreshReceipt();
-                      }
-                    });
-                  }
-                }}
-                className="mt-2 w-full rounded-xl border border-[var(--border)] px-3 py-2"
+                onClick={() => void handleDeposit()}
+                className="rounded-xl bg-[var(--safe)] py-3 text-sm font-semibold text-black disabled:opacity-40"
               >
-                Deposit 100% to vault
+                {isPending ? "Signing…" : `Save — ${vaultPct}% vault · ${liquidPct}% wallet`}
               </button>
-            </details>
+            </div>
+
+            <div className="h-px bg-[var(--border)]" />
+
+            {/* Withdraw */}
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-medium text-[var(--muted)]">Withdraw</p>
+              <input
+                type="number"
+                min="0.001"
+                step="0.01"
+                value={withdrawAmount}
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+                disabled={!hasPosition || isPending}
+                placeholder={hasPosition ? "0.0" : "No position"}
+                className="w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-4 py-3 font-mono text-sm outline-none focus:border-[var(--safe)] disabled:opacity-50"
+              />
+              <PercentRow
+                label="Of vault"
+                disabled={!hasPosition || isPending}
+                onPick={setWithdrawFromPercent}
+              />
+              <button
+                type="button"
+                disabled={isPending || !hasPosition}
+                onClick={() => void handleWithdraw()}
+                className="rounded-xl border border-[var(--border)] py-3 text-sm font-semibold disabled:opacity-40"
+              >
+                {isPending ? "Signing…" : "Withdraw"}
+              </button>
+            </div>
 
             {CONFIG.adminCapId && (
-              <div className="mt-2 border-t border-[var(--border)] pt-3">
+              <div className="border-t border-[var(--border)] pt-3">
                 <button
                   type="button"
                   onClick={() => setShowDemo(!showDemo)}
                   className="text-xs text-[var(--muted)] underline"
                 >
-                  {showDemo ? "Hide" : "Show"} demo controls (video / admin)
+                  {showDemo ? "Hide demo" : "Demo controls"}
                 </button>
                 {showDemo && (
-                  <div className="mt-3 flex flex-col gap-2">
+                  <div className="mt-2 flex flex-col gap-2">
                     <button
                       type="button"
                       disabled={isPending || !pyth?.priceUsd}
                       onClick={handleSyncPyth}
-                      className="rounded-xl border border-blue-500/40 px-3 py-2 text-xs text-blue-300"
+                      className="rounded-lg border border-blue-500/40 px-3 py-2 text-xs text-blue-300"
                     >
-                      Sync ShieldScore from Pyth (keeper PTB)
+                      Sync score from Pyth
                     </button>
                     <div className="flex gap-2">
                       <button
                         type="button"
                         disabled={isPending}
-                        onClick={handleStress}
-                        className="flex-1 rounded-xl border border-[var(--paused)]/50 px-3 py-2 text-xs text-red-300"
+                        onClick={() => runTx(() => buildStressTx())}
+                        className="flex-1 rounded-lg border border-[var(--paused)]/50 py-2 text-xs text-red-300"
                       >
-                        Demo: stress → pause
+                        Stress → pause
                       </button>
                       <button
                         type="button"
                         disabled={isPending}
-                        onClick={handleReset}
-                        className="flex-1 rounded-xl border border-[var(--border)] px-3 py-2 text-xs"
+                        onClick={() => runTx(() => buildResetMetricsTx())}
+                        className="flex-1 rounded-lg border border-[var(--border)] py-2 text-xs"
                       >
-                        Demo: reset safe
+                        Reset safe
                       </button>
                     </div>
                   </div>
@@ -516,9 +449,7 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
           </div>
         )}
 
-        {txStatus && (
-          <p className="mt-3 text-xs text-[var(--safe)]">{txStatus}</p>
-        )}
+        {txStatus && <p className="mt-3 text-xs text-[var(--safe)]">{txStatus}</p>}
         {txDigest && (
           <a
             href={EXPLORER.tx(txDigest)}

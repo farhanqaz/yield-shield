@@ -20,7 +20,7 @@ Built for **Sui Overflow 2026** · **DeFi & Payments** track.
 
 - **Smart Save PTB** — auto-split payment → guarded vault + liquid buffer (one transaction)
 - **ShieldScore** — on-chain risk score (Safe / Caution / Paused)
-- **Emergency Exit** — atomic withdraw via PTB
+- **Withdraw all** — atomic PTB back to wallet (always allowed)
 - **Pyth** — SUI/USD feed + keeper sync to on-chain metrics
 
 ---
@@ -30,7 +30,7 @@ Built for **Sui Overflow 2026** · **DeFi & Payments** track.
 ```
 /save payment ──► Smart Save PTB [split → vault deposit + liquid return]
 Pyth Hermes ──► keeper PTB ──► vault.update_metrics
-Emergency Exit ──► PTB [withdraw → coin to wallet]
+Emergency Exit ──► PTB [withdraw all → wallet]
 ```
 
 ```
