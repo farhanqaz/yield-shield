@@ -55,6 +55,14 @@ Deploy (testnet):
 ./scripts/deploy-testnet.sh
 ```
 
+Deploy (mainnet — requires funded wallet):
+
+```bash
+./scripts/deploy-mainnet.sh
+```
+
+Then update Vercel env vars and set `NEXT_PUBLIC_SUI_NETWORK=mainnet`.
+
 ### Frontend
 
 ```bash

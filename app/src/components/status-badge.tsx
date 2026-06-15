@@ -10,12 +10,17 @@ export function StatusBadge({ status, score }: Props) {
 
   return (
     <div
-      className="inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium"
-      style={{ borderColor: color, color }}
+      className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold backdrop-blur-sm"
+      style={{
+        borderColor: `${color}55`,
+        color,
+        background: `${color}12`,
+        boxShadow: `0 0 20px -6px ${color}40`,
+      }}
     >
       <span
-        className="h-2 w-2 rounded-full"
-        style={{ backgroundColor: color }}
+        className="h-1.5 w-1.5 rounded-full"
+        style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }}
       />
       {label} · {score}
     </div>

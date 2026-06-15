@@ -7,17 +7,13 @@ const Dashboard = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="flex min-h-[50vh] items-center justify-center text-sm text-[var(--muted)]">
-        Loading Yield Shield...
+      <div className="app-bg flex min-h-screen items-center justify-center">
+        <div className="skeleton h-8 w-48" />
       </div>
     ),
   },
 );
 
 export function ClientHome() {
-  return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-12">
-      <Dashboard />
-    </main>
-  );
+  return <Dashboard />;
 }

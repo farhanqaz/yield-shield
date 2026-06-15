@@ -26,6 +26,11 @@ export function isConfigured(): boolean {
   );
 }
 
+/** Admin demo controls — testnet only, hidden on mainnet production. */
+export function showDemoControls(): boolean {
+  return CONFIG.network !== "mainnet" && CONFIG.adminCapId.length > 10;
+}
+
 export const SHIELD_STATUS = {
   0: { label: "Safe", color: "var(--safe)" },
   1: { label: "Caution", color: "var(--caution)" },
