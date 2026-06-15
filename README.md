@@ -14,7 +14,7 @@ Built for **Sui Overflow 2026** · **DeFi & Payments** track · Mancer × Supert
 |---|---|
 | **Package** | `0xdfd9c33e3d5e3bbddf3e353938ebeff3951df7cda7225c018668bd87f7e2fc3d` |
 | **Vault** | `0x04a78c1a006adaa7f09be41c8341c0ae5c5fbc31d842449c77eeb8236e187f83` |
-| **Frontend** | Deploy `app/` to [Vercel](https://vercel.com) (root directory: `app`) |
+| **Frontend** | Deploy via [GitHub + Vercel](./docs/GITHUB_DEPLOY.md) (root: `app/`) |
 
 ---
 
@@ -89,7 +89,7 @@ npm install && npm run dev
 - [Demo video script](./docs/DEMO_SCRIPT.md)
 - [Track alignment](./docs/TRACK_ALIGNMENT.md)
 - [MVP spec](./docs/MVP_SPEC.md)
-- [Submission checklist](./docs/SUBMISSION_CHECKLIST.md)
+- [GitHub + Vercel deploy](./docs/GITHUB_DEPLOY.md)
 - [Interview template](./docs/INTERVIEW_TEMPLATE.md)
 
 ---
