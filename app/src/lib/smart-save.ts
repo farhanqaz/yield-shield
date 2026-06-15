@@ -1,6 +1,7 @@
 import { Transaction } from "@mysten/sui/transactions";
 import type { TransactionObjectArgument } from "@mysten/sui/transactions";
-import { CONFIG } from "./config";
+import { CONFIG, isNaviMode } from "./config";
+import { buildNaviSmartSaveTx } from "./navi";
 
 type TxBase = {
   packageId?: string;
@@ -16,16 +17,29 @@ function pkg({ packageId = CONFIG.packageId }: TxBase) {
 export const SMART_SAVE_GAS_BUFFER_MIST = 20_000_000n; // 0.02 SUI
 
 /**
- * Programmable Save — one PTB splits incoming funds and routes to vault + liquid buffer.
- * Uses a single split from the gas coin (nested split leaves an unused coin in the PTB).
+ * Programmable Save — one PTB splits incoming funds and routes to vault/NAVI + liquid buffer.
+ * NAVI mode (mainnet): vault % → NAVI lending yield. Testnet: Yield Shield vault contract.
  */
-export function buildSmartSaveTx(
+export async function buildSmartSaveTx(
   totalMist: bigint,
   sender: string,
   opts: TxBase & { vaultRatioBps?: number; receiptId?: string } = {},
-): Transaction {
+): Promise<Transaction> {
   const ratio = opts.vaultRatioBps ?? CONFIG.smartSaveVaultBps ?? 8500;
-  const vaultAmount = (totalMist * BigInt(ratio)) / 10000n;
+
+  if (isNaviMode()) {
+    return buildNaviSmartSaveTx(totalMist, sender, ratio);
+  }
+
+  return buildVaultSmartSaveTx(totalMist, sender, { ...opts, vaultRatioBps: ratio });
+}
+
+function buildVaultSmartSaveTx(
+  totalMist: bigint,
+  sender: string,
+  opts: TxBase & { vaultRatioBps: number; receiptId?: string },
+): Transaction {
+  const vaultAmount = (totalMist * BigInt(opts.vaultRatioBps)) / 10000n;
   const liquidAmount = totalMist - vaultAmount;
 
   const tx = new Transaction();

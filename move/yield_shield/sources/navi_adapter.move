@@ -1,5 +1,5 @@
-/// NAVI lending adapter — mock accounting layer for hackathon MVP.
-/// Production: replace with real NAVI deposit/withdraw PTB calls.
+/// NAVI lending adapter — mock on testnet; mainnet uses @naviprotocol/lending PTB composability.
+/// Production Move integration: deposit_with_account_cap via vault-held AccountCap.
 module yield_shield::navi_adapter;
 
 /// Record simulated supply to NAVI (funds remain in vault reserve for mock).

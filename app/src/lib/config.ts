@@ -31,6 +31,16 @@ export function showDemoControls(): boolean {
   return CONFIG.network !== "mainnet" && CONFIG.adminCapId.length > 10;
 }
 
+/** Real NAVI yield on mainnet when enabled. */
+export function isNaviMode(): boolean {
+  return CONFIG.enableNavi && CONFIG.network === "mainnet";
+}
+
+/** Auto ShieldScore keeper (Pyth + NAVI pool metrics). */
+export function autoShieldKeeperEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_AUTO_SHIELD_KEEPER === "true";
+}
+
 export const SHIELD_STATUS = {
   0: { label: "Safe", color: "var(--safe)" },
   1: { label: "Caution", color: "var(--caution)" },

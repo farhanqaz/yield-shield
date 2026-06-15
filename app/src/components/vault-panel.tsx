@@ -8,7 +8,8 @@ import {
 } from "@mysten/dapp-kit";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type CSSProperties } from "react";
-import { CONFIG, MIST_PER_SUI, isConfigured, showDemoControls } from "@/lib/config";
+import { Transaction } from "@mysten/sui/transactions";
+import { CONFIG, MIST_PER_SUI, isConfigured, showDemoControls, isNaviMode, autoShieldKeeperEnabled } from "@/lib/config";
 import {
   buildResetMetricsTx,
   buildStressTx,
@@ -18,6 +19,7 @@ import {
 import { volatilityBpsFromPrices } from "@/lib/pyth";
 import { EXPLORER } from "@/lib/explorer";
 import { buildSmartSaveTx, SMART_SAVE_GAS_BUFFER_MIST } from "@/lib/smart-save";
+import { buildNaviWithdrawTx } from "@/lib/navi";
 import {
   defaultVaultBps as getDefaultVaultBps,
   loadVaultBps,
@@ -26,6 +28,8 @@ import {
 import { useReceipt, storeReceiptId, clearReceiptId } from "@/hooks/useReceipt";
 import { usePythPrice } from "@/hooks/usePythPrice";
 import { useVault } from "@/hooks/useVault";
+import { useNaviApy, useNaviSupply } from "@/hooks/useNavi";
+import { useShieldKeeper } from "@/hooks/useShieldKeeper";
 import { SplitSlider } from "@/components/charts/split-slider";
 import { SplitPreview } from "@/components/charts/split-preview";
 import { PortfolioChart } from "@/components/charts/portfolio-chart";
@@ -92,6 +96,13 @@ export function VaultPanel({
     syncReceiptFromChain,
   } = useReceipt(account?.address);
   const { data: pyth } = usePythPrice();
+  const naviMode = isNaviMode();
+  const naviApy = useNaviApy();
+  const { data: naviSupplyMist = 0n, refetch: refetchNavi } = useNaviSupply(
+    account?.address,
+  );
+
+  useShieldKeeper();
 
   const { data: walletBalance } = useSuiClientQuery(
     "getBalance",
@@ -145,7 +156,11 @@ export function VaultPanel({
       ? walletMist - SMART_SAVE_GAS_BUFFER_MIST
       : 0n;
 
-  const vaultSuiNum = Number(shares) / Number(MIST_PER_SUI);
+  const vaultSuiNum = naviMode
+    ? Number(naviSupplyMist) / Number(MIST_PER_SUI)
+    : Number(shares) / Number(MIST_PER_SUI);
+  const effectiveShares = naviMode ? naviSupplyMist : shares;
+  const effectiveHasPosition = naviMode ? naviSupplyMist > 0n : hasPosition;
   const walletSuiNum = Number(walletMist) / Number(MIST_PER_SUI);
   const depositSuiNum = parseFloat(depositAmount) || 0;
   const vaultPct = vaultBps / 100;
@@ -160,7 +175,7 @@ export function VaultPanel({
   };
 
   const runTx = (
-    build: () => ReturnType<typeof buildSmartSaveTx>,
+    build: () => Promise<Transaction> | Transaction,
     onSuccess?: (
       digest: string,
       objectChanges?: Parameters<typeof findCreatedReceiptId>[0],
@@ -171,40 +186,43 @@ export function VaultPanel({
     setTxDigest(null);
     setTxStatus("Confirm in wallet…");
 
-    signAndExecute(
-      { transaction: build() },
-      {
-        onSuccess: async (result) => {
-          setTxDigest(result.digest);
-          setTxStatus("Done");
+    void Promise.resolve(build()).then((transaction) => {
+      signAndExecute(
+        { transaction },
+        {
+          onSuccess: async (result) => {
+            setTxDigest(result.digest);
+            setTxStatus("Done");
 
-          let objectChanges: Parameters<typeof findCreatedReceiptId>[0];
-          try {
-            const details = await client.getTransactionBlock({
-              digest: result.digest,
-              options: { showObjectChanges: true },
-            });
-            objectChanges = details.objectChanges as Parameters<
-              typeof findCreatedReceiptId
-            >[0];
-          } catch {
-            objectChanges = undefined;
-          }
+            let objectChanges: Parameters<typeof findCreatedReceiptId>[0];
+            try {
+              const details = await client.getTransactionBlock({
+                digest: result.digest,
+                options: { showObjectChanges: true },
+              });
+              objectChanges = details.objectChanges as Parameters<
+                typeof findCreatedReceiptId
+              >[0];
+            } catch {
+              objectChanges = undefined;
+            }
 
-          onSuccess?.(result.digest, objectChanges);
-          invalidate();
-          void refreshReceipt();
+            onSuccess?.(result.digest, objectChanges);
+            invalidate();
+            void refreshReceipt();
+            void refetchNavi();
+          },
+          onError: (e) => {
+            setError(
+              e.message === "Unexpected error"
+                ? "Failed — keep ~0.02 SUI for gas and try a smaller amount."
+                : e.message,
+            );
+            setTxStatus(null);
+          },
         },
-        onError: (e) => {
-          setError(
-            e.message === "Unexpected error"
-              ? "Failed — keep ~0.02 SUI for gas and try a smaller amount."
-              : e.message,
-          );
-          setTxStatus(null);
-        },
-      },
-    );
+      );
+    });
   };
 
   const handleDeposit = async () => {
@@ -223,9 +241,10 @@ export function VaultPanel({
       () =>
         buildSmartSaveTx(mist, account.address, {
           vaultRatioBps: vaultBps,
-          receiptId: receiptId ?? undefined,
+          receiptId: naviMode ? undefined : receiptId ?? undefined,
         }),
       async (_digest, objectChanges) => {
+        if (naviMode) return;
         let id = findCreatedReceiptId(objectChanges);
         if (!id) {
           const synced = await syncReceiptFromChain();
@@ -246,6 +265,18 @@ export function VaultPanel({
     const mist = mistFromInput(withdrawAmount);
     if (!mist) {
       setError("Enter a valid amount");
+      return;
+    }
+
+    if (naviMode) {
+      if (mist > naviSupplyMist) {
+        setError(`Max: ${formatSui(naviSupplyMist)} SUI in NAVI`);
+        return;
+      }
+      runTx(
+        () => buildNaviWithdrawTx(mist, account.address),
+        () => void refetchNavi(),
+      );
       return;
     }
 
@@ -304,6 +335,16 @@ export function VaultPanel({
               <p className="font-mono text-base font-semibold text-[var(--text)]">
                 ${pyth.priceUsd.toFixed(4)}
               </p>
+              {naviMode && naviApy != null && (
+                <p className="mt-1 text-emerald-400">
+                  NAVI supply ~{naviApy.toFixed(2)}% APY
+                </p>
+              )}
+              {autoShieldKeeperEnabled() && (
+                <p className="mt-0.5 text-[10px] text-[var(--muted)]">
+                  ShieldScore auto-sync on
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -318,7 +359,13 @@ export function VaultPanel({
 
         {depositsBlocked && (
           <p className="mt-4 rounded-lg bg-red-500/10 px-3 py-2 text-center text-xs text-red-300">
-            Deposits paused (high risk). Withdraw still works.
+            Deposits paused (ShieldScore). Withdraw still works.
+          </p>
+        )}
+
+        {naviMode && (
+          <p className="mt-3 text-center text-[11px] text-emerald-400/90">
+            Vault portion earns real yield via NAVI lending on mainnet.
           </p>
         )}
       </section>
@@ -372,12 +419,14 @@ export function VaultPanel({
               onClick={() => void handleDeposit()}
               className="btn-primary w-full py-3.5 text-sm"
             >
-              {isPending ? "Signing…" : "Save"}
+              {isPending ? "Signing…" : naviMode ? "Save → NAVI yield" : "Save"}
             </button>
 
             {!paymentLink && (
               <div className="border-t border-[var(--border)] pt-5">
-                <label className="text-sm font-medium">Withdraw from vault</label>
+                <label className="text-sm font-medium">
+                  {naviMode ? "Withdraw from NAVI" : "Withdraw from vault"}
+                </label>
                 <div className="relative mt-2">
                   <input
                     type="number"
@@ -385,8 +434,8 @@ export function VaultPanel({
                     step="0.01"
                     value={withdrawAmount}
                     onChange={(e) => setWithdrawAmount(e.target.value)}
-                    disabled={!hasPosition || isPending}
-                    placeholder={hasPosition ? "0.0" : "Save first"}
+                    disabled={!effectiveHasPosition || isPending}
+                    placeholder={effectiveHasPosition ? "0.0" : "Save first"}
                     className="input-field"
                   />
                   <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs text-[var(--muted)]">
@@ -396,15 +445,15 @@ export function VaultPanel({
                 <div className="mt-2 flex gap-2">
                   <button
                     type="button"
-                    disabled={!hasPosition || isPending}
-                    onClick={() => setWithdrawAmount(formatSui(shares))}
+                    disabled={!effectiveHasPosition || isPending}
+                    onClick={() => setWithdrawAmount(formatSui(effectiveShares))}
                     className="chip"
                   >
                     Max
                   </button>
                   <button
                     type="button"
-                    disabled={isPending || !hasPosition}
+                    disabled={isPending || !effectiveHasPosition}
                     onClick={() => void handleWithdraw()}
                     className="btn-secondary flex-1 py-3 text-sm"
                   >
