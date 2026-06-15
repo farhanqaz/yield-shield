@@ -1,0 +1,6 @@
+[package]
+name = "yield_shield"
+edition = "2024.beta"
+
+[addresses]
+yield_shield = "0x0"

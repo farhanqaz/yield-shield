@@ -1,0 +1,27 @@
+# Dependencies
+app/node_modules/
+**/node_modules/
+
+# Next.js
+app/.next/
+app/out/
+
+# Env secrets (use Vercel env vars in production)
+.env
+.env.*
+!.env.local.example
+app/.env.local
+
+# Move build
+move/**/build/
+move/**/.move/
+
+# OS / IDE
+.DS_Store
+*.log
+
+# Vercel
+app/.vercel
+
+# Vendored sui-pilot clone (install: see docs/SUI_PILOT.md)
+.cursor/sui-pilot/
