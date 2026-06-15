@@ -134,9 +134,7 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
     const vaultBps = CONFIG.smartSaveVaultBps;
 
     if (CONFIG.enableNavi) {
-      setError(
-        "NAVI composable PTB is mainnet-only — see docs/NAVI_COMPOSABLE.md. Use Smart Save on testnet.",
-      );
+      setError("NAVI composable PTB is mainnet-only. Use Smart Save on testnet.");
       return;
     }
 
