@@ -1,61 +1,64 @@
 # Yield Shield — Demo Video Script (~5 min)
 
-**Track:** DeFi & Payments · **Goal:** Top 2 rubric (50% real-world)
+**Track:** DeFi & Payments · **Target:** Top 3
 
 ---
 
-## 0:00–0:50 — Problem (Real-World)
+## 0:00–0:40 — Problem
 
-> "On Sui, DeFi users face a real problem: when volatility spikes, getting out means juggling multiple transactions — slow and stressful. After recent ecosystem stress, many retail users just hold idle assets instead of earning safely."
+> "The DeFi and Payments track asks a simple question: why are payments still static transfers while DeFi lives in a separate, manual world? On Sui, that changes — payments can become programmable financial actions. Yield Shield shows how."
 
-**Visual:** Headline on screen — *"Manual DeFi exits are broken"*
-
----
-
-## 0:50–1:20 — Solution
-
-> "Yield Shield is a programmable safety rail. You deposit SUI into a guarded vault. ShieldScore monitors risk — powered by Pyth price signals. When risk is too high, deposits pause automatically. And if you need out — one button: **Emergency Exit** — your funds return in a single atomic PTB on Sui."
+**Visual:** Track problem statement headline on screen
 
 ---
 
-## 1:20–3:30 — Live demo (testnet)
+## 0:40–1:10 — Solution
 
-1. Open live app (Vercel URL)
-2. Connect wallet · show **ShieldScore gauge** + Pyth SUI/USD price
-3. Deposit 0.1 SUI → score stays **Safe**
-4. Open demo controls → **Sync from Pyth** or **Stress → pause**
-5. Status flips **Paused** · deposits disabled
-6. Hit **Emergency Exit — withdraw all (PTB)** · confirm in wallet
-7. Show [Sui Explorer](https://suiscan.xyz/testnet) transaction digest
-
-**Say:** "One PTB — no manual orchestration. That's programmable money on Sui."
+> "Yield Shield turns an incoming payment into a guarded savings flow in one atomic PTB. Smart Save auto-splits funds between a shielded vault and a liquid buffer. ShieldScore monitors risk from Pyth. When risk is too high, deposits pause. Emergency Exit returns your vault position in a single transaction."
 
 ---
 
-## 3:30–4:10 — Technical (20%)
+## 1:10–2:30 — Smart Save (hero demo)
 
-> "Three reasons this is native to Sui:
+1. Open **`/save?amount=0.5`** (programmable payment link)
+2. Connect wallet · show suggested amount
+3. Click **Smart Save** — explain split ratio on screen
+4. Confirm wallet · show explorer digest
+5. **Say:** "One PTB — split, deposit, guard. No manual orchestration."
+
+---
+
+## 2:30–3:30 — Risk + Emergency Exit
+
+1. Dashboard · **ShieldScore gauge** + Pyth price
+2. Demo controls → **Sync from Pyth** or **Stress → pause**
+3. Status **Paused** · deposits disabled
+4. **Emergency Exit** → confirm · explorer tx
+5. **Say:** "Programmable exit — one signature, atomic on Sui."
+
+---
+
+## 3:30–4:10 — Technical
+
+> "Three Sui primitives:
 > 1. **Objects** — vault and receipt are first-class assets
-> 2. **PTBs** — deposit and exit bundle multiple Move calls atomically
-> 3. **Pyth** — real oracle feed drives on-chain ShieldScore via keeper transaction"
+> 2. **PTBs** — Smart Save and Emergency Exit bundle multiple Move calls
+> 3. **Composability** — Pyth keeper + optional NAVI lending in the same transaction pattern"
 
-**Visual:** architecture diagram from README
+**Visual:** architecture from README
 
 ---
 
-## 4:10–5:00 — Vision + close
+## 4:10–5:00 — Close
 
-> "v1 is the seatbelt for yield. v2 adds NAVI position reads. v3 extends the same PTB pattern to full deleverage — withdraw, swap, repay — without users clicking three times."
-
-> "Built during Mancer × Superteam bootcamp. Yield Shield — programmable DeFi safety for Sui."
+> "Yield Shield — programmable money with guardrails. Testnet live today. Mainnet path adds NAVI composable earn. GitHub and live demo in the submission."
 
 ---
 
 ## Pre-record checklist
 
-- [ ] Wallet funded testnet SUI
-- [ ] Admin wallet for demo stress (or Pyth sync)
-- [ ] Vercel URL works on mobile
-- [ ] Explorer tab pre-opened
-- [ ] Hide browser extensions / notifications
-- [ ] Rehearse 3× — pick best take
+- [ ] Wallet funded (testnet SUI)
+- [ ] Admin wallet for stress / Pyth sync
+- [ ] Vercel URL + `/save?amount=0.5` works
+- [ ] Explorer tab ready
+- [ ] Rehearse 3×

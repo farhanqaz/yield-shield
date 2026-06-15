@@ -69,7 +69,7 @@ We sit at the intersection of two flavors from the official idea bank:
 | Novel use of PTBs | Atomic multi-step: oracle read + NAVI action + vault state update |
 | Strong composability | Vault module + `navi_adapter` + `shield_score` as separate Move modules |
 | Excellent UX for complex actions | User sees one button; PTB handles orchestration |
-| Real-world applicability | Post-exploit anxiety, bootcamp builders, SEA freelancers with idle USDC |
+| Real-world applicability | Programmable payment → save; post-volatility exit automation |
 
 ---
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { ConnectButton, useCurrentAccount } from "@mysten/dapp-kit";
+import Link from "next/link";
 import { VaultPanel } from "./vault-panel";
 
 export function Dashboard() {
@@ -11,14 +12,14 @@ export function Dashboard() {
       <header className="flex items-center justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-widest text-[var(--muted)]">
-            Yield Shield · DeFi & Payments
+            Yield Shield · Sui Overflow 2026
           </p>
           <h1 className="text-2xl font-semibold leading-tight">
-            Programmable DeFi safety rail
+            Programmable money with guardrails
           </h1>
-          <p className="mt-1 max-w-xs text-xs text-[var(--muted)]">
-            Earn with guardrails. Emergency Exit in one atomic PTB when risk
-            spikes.
+          <p className="mt-1 max-w-sm text-xs text-[var(--muted)]">
+            Payments become financial actions — Smart Save routes funds in one
+            PTB. ShieldScore pauses risk. Emergency Exit withdraws atomically.
           </p>
           {account && (
             <p className="mt-2 truncate font-mono text-[10px] text-[var(--muted)]">
@@ -32,6 +33,10 @@ export function Dashboard() {
       <VaultPanel />
 
       <footer className="text-center text-[10px] text-[var(--muted)]">
+        <Link href="/save?amount=0.5" className="underline">
+          Programmable payment link
+        </Link>
+        {" · "}
         <a
           href="https://suiscan.xyz/testnet/object/0x04a78c1a006adaa7f09be41c8341c0ae5c5fbc31d842449c77eeb8236e187f83"
           target="_blank"
@@ -42,12 +47,12 @@ export function Dashboard() {
         </a>
         {" · "}
         <a
-          href="https://github.com/contract-hero/sui-pilot"
+          href="https://github.com/farhanqaz/yield-shield"
           target="_blank"
           rel="noreferrer"
           className="underline"
         >
-          Built with sui-pilot
+          GitHub
         </a>
       </footer>
     </div>

@@ -3,9 +3,9 @@ import { Providers } from "@/components/providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Yield Shield | Programmable Savings on Sui",
+  title: "Yield Shield | Programmable Money on Sui",
   description:
-    "USDC that earns yield on NAVI with automatic circuit breaker when risk rises.",
+    "Smart Save PTB routes payments to guarded vault + liquid buffer. ShieldScore circuit breaker and Emergency Exit on Sui.",
 };
 
 export default function RootLayout({

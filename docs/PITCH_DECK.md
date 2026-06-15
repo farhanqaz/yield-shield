@@ -1,91 +1,94 @@
 # Yield Shield — Pitch Deck (6 slides)
 
-> **Track:** DeFi & Payments · Sui Overflow 2026  
-> **Target:** Top 2 — optimize Real-World (50%) + Demo polish
+> **Track:** DeFi & Payments · [Problem statement](https://mystenlabs.notion.site/defi-payments-problem-statement)  
+> **Target:** Top 3 · stretch #1
 
 ---
 
-## Slide 1 — Problem (Real-World 50%)
+## Slide 1 — Problem
 
-**Headline:** DeFi on Sui is powerful — but retail users panic when risk spikes.
+**Headline:** Payments and DeFi are disconnected.
 
 **Bullets:**
-- After ecosystem stress, many users hold idle SUI/stablecoins — afraid to deploy
-- Manual rescue = multiple txs, slow, expensive gas
-- No simple **programmable exit** when market volatility hits
+- Payments today = static transfers
+- DeFi = complex, siloed, manual orchestration
+- When risk spikes, users juggle multiple txs to exit — slow and error-prone
 
-**User quote (fill after interviews):**
-> *"I want yield but I don't know when to get out."* — bootcamp builder, Superteam ID
+**Track quote:**
+> *"On Sui, payments can become programmable financial actions."*
 
 ---
 
 ## Slide 2 — Solution
 
-**Headline:** Yield Shield — the DeFi seatbelt for Sui.
+**Headline:** Yield Shield — programmable money with embedded guardrails.
 
 **One-liner:**
-Programmable savings with on-chain ShieldScore + **Emergency Exit** in one atomic PTB.
+Incoming funds auto-route via **Smart Save PTB** — guarded vault + liquid buffer in one atomic transaction.
 
-**Not:** max APY aggregator · full insurance · unbuilt deleverage
+**Plus:** ShieldScore circuit breaker · Pyth-driven risk · **Emergency Exit** PTB
 
 ---
 
-## Slide 3 — Demo (Product & UX 20%)
+## Slide 3 — Demo
 
-**Screenshot:** Paused state + red Emergency Exit button + Score gauge
+**Screenshot:** `/save` payment page + Paused state + Emergency Exit
 
 **Live flow (testnet):**
-1. Deposit SUI → Safe (score ~100)
-2. Keeper syncs Pyth volatility OR demo stress → **Paused**
-3. **Emergency Exit** → withdraw all in one PTB
+1. Open programmable payment link → **Smart Save** (split PTB)
+2. ShieldScore **Safe** → Pyth sync or stress → **Paused**
+3. **Emergency Exit** — withdraw all in one PTB
 
-**Live URL:** `[your-vercel-url]`
+**Live URL:** `[vercel-url]`  
+**Payment link:** `[vercel-url]/save?amount=0.5`
 
 ---
 
-## Slide 4 — Architecture (Technical 20%)
+## Slide 4 — Architecture
 
 ```
-Pyth Hermes (SUI/USD) → keeper PTB → vault.update_metrics
-User wallet → PTB [split → deposit → NAVI-ready supply]
-Emergency Exit → PTB [withdraw → coin to wallet]
+/save payment ──► Smart Save PTB [split → vault + liquid]
+Pyth Hermes ──► keeper PTB ──► vault.update_metrics
+Emergency Exit ──► PTB [withdraw → wallet]
+Mainnet option ──► Composable PTB [NAVI deposit + vault]
 ```
 
-**Sui-native:**
-- Shared `Vault` object + `ShieldReceipt`
-- Programmable Transaction Blocks (atomic)
-- Move 2024 · testnet deployed
+**Sui-native:** shared `Vault` · `ShieldReceipt` objects · Move 2024 · PTBs
 
 **Package:** `0xdfd9...fc3d` · **Vault:** `0x04a7...f83`
 
 ---
 
-## Slide 5 — Traction & validation
+## Slide 5 — Technical proof
 
-- Testnet deploy + working Next.js dashboard
-- 5 problem interviews (bootcamp / Superteam)
-- Built during **Mancer × Superteam** bootcamp
-- Move unit tests passing
+| Item | Evidence |
+|------|----------|
+| Move contracts | Testnet deployed + unit tests |
+| PTB composability | Smart Save split + Emergency Exit |
+| Oracle integration | Pyth SUI/USD → on-chain ShieldScore |
+| DeFi composability | NAVI SDK composable PTB (mainnet) |
+| Open source | github.com/farhanqaz/yield-shield |
 
 ---
 
-## Slide 6 — Vision (Presentation 10%)
+## Slide 6 — Vision
 
 | Phase | Scope |
 |-------|--------|
-| **v1 (now)** | ShieldScore + pause + Emergency Exit + Pyth |
-| v2 | NAVI supply integration + borrower health read |
-| v3 | Full PTB deleverage (withdraw → Cetus → repay) |
+| **v1 (now)** | Smart Save + ShieldScore + Emergency Exit + Pyth |
+| v2 | Mainnet + NAVI composable earn live |
+| v3 | Multi-asset vaults + conditional payment rules |
 
-**Ask:** Top 4 DeFi track — programmable safety rail for Sui retail.
+**Close:** Programmable money that makes savings and exits automatic on Sui.
 
 ---
 
-## Judging rubric map
+## Judging map
 
-| Rubric | How we score |
-|--------|----------------|
-| Real-World 50% | Fear + manual orchestration + SEA retail persona |
-| UX 20% | Gauge, Emergency Exit hero, Vercel live |
-| Technical 20% | Pyth + PTB + Move on testnet |
-| Presentation 10% | This deck + 5-min video |
+| Criterion | Evidence |
+|-----------|----------|
+| Financial use case | Payment → auto-save with risk rules |
+| Asset handling | Move vault + receipt ownership |
+| End-to-end flow | Live Vercel + testnet txs |
+| Novel PTBs | Split deposit + atomic exit |
+| UX | Payment link, gauge, one-click exit |

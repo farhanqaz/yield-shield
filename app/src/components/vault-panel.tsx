@@ -23,6 +23,7 @@ import {
 } from "@/lib/transactions";
 import { volatilityBpsFromPrices } from "@/lib/pyth";
 import { EXPLORER } from "@/lib/explorer";
+import { buildSmartSaveTx } from "@/lib/smart-save";
 import { useReceipt, storeReceiptId, clearReceiptId } from "@/hooks/useReceipt";
 import { usePythPrice } from "@/hooks/usePythPrice";
 import { useVault } from "@/hooks/useVault";
@@ -46,7 +47,7 @@ function findCreatedReceiptId(
   return null;
 }
 
-export function VaultPanel() {
+export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }) {
   const account = useCurrentAccount();
   const client = useSuiClient();
   const queryClient = useQueryClient();
@@ -65,7 +66,7 @@ export function VaultPanel() {
   );
   const { data: pyth, isLoading: pythLoading } = usePythPrice();
 
-  const [amount, setAmount] = useState("0.1");
+  const [amount, setAmount] = useState(defaultAmount);
   const [txStatus, setTxStatus] = useState<string | null>(null);
   const [txDigest, setTxDigest] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -122,7 +123,7 @@ export function VaultPanel() {
     );
   };
 
-  const handleDeposit = () => {
+  const handleSmartSave = () => {
     if (!account) return;
     const mist = BigInt(Math.floor(parseFloat(amount) * Number(MIST_PER_SUI)));
     if (mist <= BigInt(0)) {
@@ -130,10 +131,22 @@ export function VaultPanel() {
       return;
     }
 
-    if (hasReceipt && receiptId) {
-      runTx(() => buildDepositIntoReceiptTx(mist, receiptId));
-    } else {
-      runTx(() => buildDepositTx(mist, account.address), (result) => {
+    const vaultBps = CONFIG.smartSaveVaultBps;
+
+    if (CONFIG.enableNavi) {
+      setError(
+        "NAVI composable PTB is mainnet-only — see docs/NAVI_COMPOSABLE.md. Use Smart Save on testnet.",
+      );
+      return;
+    }
+
+    runTx(
+      () =>
+        buildSmartSaveTx(mist, account.address, {
+          vaultRatioBps: vaultBps,
+          receiptId: hasReceipt && receiptId ? receiptId : undefined,
+        }),
+      (result) => {
         const id = findCreatedReceiptId(
           result.objectChanges as Parameters<typeof findCreatedReceiptId>[0],
         );
@@ -141,8 +154,8 @@ export function VaultPanel() {
           storeReceiptId(id);
           refreshStoredReceipt();
         }
-      });
-    }
+      },
+    );
   };
 
   const handleEmergencyExit = () => {
@@ -181,7 +194,7 @@ export function VaultPanel() {
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-lg font-medium">Risk radar</h2>
           <span className="rounded-full bg-[var(--bg)] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[var(--muted)]">
-            Pyth · NAVI-ready
+            Pyth{CONFIG.enableNavi ? " · NAVI" : ""} · PTB
           </span>
         </div>
 
@@ -219,10 +232,11 @@ export function VaultPanel() {
       </section>
 
       <section className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6">
-        <h2 className="mb-1 text-lg font-medium">Actions</h2>
+        <h2 className="mb-1 text-lg font-medium">Programmable Save</h2>
         <p className="mb-4 text-xs text-[var(--muted)]">
-          One programmable flow on Sui — deposit, score update, and exit bundled
-          in PTBs.
+          One PTB — incoming funds auto-route to guarded vault
+          {CONFIG.enableNavi ? " + NAVI yield" : ""} with liquid buffer kept in
+          wallet. No manual orchestration.
         </p>
 
         {!account ? (
@@ -266,11 +280,47 @@ export function VaultPanel() {
             <button
               type="button"
               disabled={isPending || depositsBlocked}
-              onClick={handleDeposit}
+              onClick={handleSmartSave}
               className="rounded-xl bg-[var(--safe)] px-4 py-3 text-sm font-semibold text-black disabled:opacity-40"
             >
-              {isPending ? "Signing…" : "Deposit to vault"}
+              {isPending
+                ? "Signing…"
+                : `Smart Save — ${CONFIG.smartSaveVaultBps / 100}% vault / ${(10000 - CONFIG.smartSaveVaultBps) / 100}% liquid (1 PTB)`}
             </button>
+
+            <details className="text-xs text-[var(--muted)]">
+              <summary className="cursor-pointer underline">Direct vault deposit</summary>
+              <button
+                type="button"
+                disabled={isPending || depositsBlocked}
+                onClick={() => {
+                  if (!account) return;
+                  const mist = BigInt(
+                    Math.floor(parseFloat(amount) * Number(MIST_PER_SUI)),
+                  );
+                  if (mist <= BigInt(0)) {
+                    setError("Enter a valid amount");
+                    return;
+                  }
+                  if (hasReceipt && receiptId) {
+                    runTx(() => buildDepositIntoReceiptTx(mist, receiptId));
+                  } else {
+                    runTx(() => buildDepositTx(mist, account.address), (result) => {
+                      const id = findCreatedReceiptId(
+                        result.objectChanges as Parameters<typeof findCreatedReceiptId>[0],
+                      );
+                      if (id) {
+                        storeReceiptId(id);
+                        refreshStoredReceipt();
+                      }
+                    });
+                  }
+                }}
+                className="mt-2 w-full rounded-xl border border-[var(--border)] px-3 py-2"
+              >
+                Deposit 100% to vault
+              </button>
+            </details>
 
             {CONFIG.adminCapId && (
               <div className="mt-2 border-t border-[var(--border)] pt-3">

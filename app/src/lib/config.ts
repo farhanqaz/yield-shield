@@ -5,11 +5,17 @@
  * into the client bundle (dynamic process.env[key] does not work in browser).
  */
 export const CONFIG = {
-  network: "testnet" as const,
+  network: (process.env.NEXT_PUBLIC_SUI_NETWORK ?? "testnet") as
+    | "testnet"
+    | "mainnet",
   packageId: process.env.NEXT_PUBLIC_PACKAGE_ID ?? "",
   vaultId: process.env.NEXT_PUBLIC_VAULT_ID ?? "",
   adminCapId: process.env.NEXT_PUBLIC_ADMIN_CAP_ID ?? "",
   coinType: process.env.NEXT_PUBLIC_COIN_TYPE ?? "0x2::sui::SUI",
+  /** NAVI lending is mainnet-only — set true when vault is deployed on mainnet */
+  enableNavi: process.env.NEXT_PUBLIC_ENABLE_NAVI === "true",
+  /** Default vault allocation for Smart Save PTB (basis points) */
+  smartSaveVaultBps: Number(process.env.NEXT_PUBLIC_SMART_SAVE_VAULT_BPS ?? "8500"),
 };
 
 export function isConfigured(): boolean {

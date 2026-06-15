@@ -1,53 +1,48 @@
 # Submission Checklist — Sui Overflow DeFi Track
 
-Target: **Top 2 DeFi & Payments**
+Target: **Top 3** · stretch #1  
+Submit via [DeepSurge](https://www.deepsurge.xyz/hackathons/b587dc0c-4cb8-4e63-ada5-519df38103bf)
 
 ---
 
 ## Before submit
 
-### Real-World (50%)
-- [ ] 5 problem interviews done — paste quotes in `PITCH_DECK.md` slide 1
-- [ ] Persona clear: bootcamp builder / retail DeFi first-timer
-- [ ] Problem = manual exit + fear, NOT generic "DeFi is hard"
+### Problem & product
+- [ ] README explains programmable payment → save flow (non-jargon)
+- [ ] `/save?amount=0.5` works on production
+- [ ] Smart Save PTB tested on testnet
+- [ ] Emergency Exit tested when Paused
 
-### Product & UX (20%)
+### UX
 - [ ] Vercel live URL in README + pitch deck slide 3
-- [ ] Emergency Exit button tested on testnet
 - [ ] Mobile layout OK
 - [ ] No "Contract not configured" on production
 
-### Technical (20%)
+### Technical
 - [ ] Package + Vault on testnet (see README)
 - [ ] 2+ explorer tx links in demo video description
 - [ ] Pyth price visible in app
 - [ ] `sui move test` passes
+- [ ] (Optional) Mainnet + `NEXT_PUBLIC_ENABLE_NAVI=true` for NAVI composable PTB
 
-### Presentation (10%)
+### Presentation
 - [ ] Demo video ≤ 5 min (`docs/DEMO_SCRIPT.md`)
-- [ ] Pitch deck exported PDF or link to `PITCH_DECK.md`
-- [ ] GitHub repo public, README complete
-
-### Community
-- [ ] Post in Superteam Indonesia Discord with Vercel link
-- [ ] Tag #SuiOverflow / bootcamp cohort
+- [ ] Pitch deck PDF or link to `docs/PITCH_DECK.md`
+- [ ] GitHub public: https://github.com/farhanqaz/yield-shield
 
 ---
 
-## Demo video shot list (minimum)
+## Demo video minimum shots
 
-1. Problem voiceover (15s)
-2. Deposit → Safe gauge
-3. Stress OR Pyth sync → Paused
-4. Emergency Exit → explorer tx
+1. Problem voiceover (programmable money)
+2. `/save` → Smart Save PTB → explorer
+3. Stress/Pyth → Paused
+4. Emergency Exit → explorer
 5. Why Sui PTB (15s)
-6. Roadmap (15s)
 
 ---
 
 ## Env vars for Vercel
-
-Copy from `app/.env.local`:
 
 ```
 NEXT_PUBLIC_PACKAGE_ID=
@@ -55,23 +50,13 @@ NEXT_PUBLIC_VAULT_ID=
 NEXT_PUBLIC_ADMIN_CAP_ID=
 NEXT_PUBLIC_COIN_TYPE=0x2::sui::SUI
 NEXT_PUBLIC_PYTH_SUI_FEED_ID=0xef0d8b6fda2ce01b21879bd86caea3e1dbd8ec4bfdaf0a2e3b1e3bbf1ebfc2c1
+NEXT_PUBLIC_SMART_SAVE_VAULT_BPS=8500
+NEXT_PUBLIC_ENABLE_NAVI=false
+NEXT_PUBLIC_SUI_NETWORK=testnet
 ```
 
 ---
 
 ## Admin wallet for demo
 
-Stress / Pyth sync requires **AdminCap** on connected wallet.
-
-Deployer: `musing-epidote` (`0xe870454b…4bfb`) — import to Sui Wallet for demo day.
-
----
-
-## Deploy Vercel (manual)
-
-```bash
-cd app
-npx vercel login
-npx vercel --prod
-# Set root to app/ if importing from GitHub UI instead
-```
+Stress / Pyth sync requires **AdminCap** on connected wallet (deployer address in README).
