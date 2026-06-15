@@ -64,7 +64,7 @@ export function buildWithdrawTx(
   const tx = new Transaction();
   const coinType = opts.coinType ?? CONFIG.coinType;
 
-  const [coin] = tx.moveCall({
+  const coin = tx.moveCall({
     target: `${pkg(opts)}::vault::withdraw`,
     typeArguments: [coinType],
     arguments: [
@@ -75,6 +75,39 @@ export function buildWithdrawTx(
   });
 
   tx.transferObjects([coin], sender);
+  return tx;
+}
+
+/** Withdraw all shares from multiple receipts in one PTB. */
+export function buildWithdrawAllTx(
+  items: { receiptId: string; shares: bigint }[],
+  sender: string,
+  opts: TxBase = {},
+): Transaction {
+  const tx = new Transaction();
+  const coinType = opts.coinType ?? CONFIG.coinType;
+  const active = items.filter((i) => i.shares > 0n);
+  if (active.length === 0) {
+    throw new Error("No vault shares to withdraw");
+  }
+
+  const coins = active.map((item) =>
+    tx.moveCall({
+      target: `${pkg(opts)}::vault::withdraw`,
+      typeArguments: [coinType],
+      arguments: [
+        tx.object(opts.vaultId ?? CONFIG.vaultId),
+        tx.object(item.receiptId),
+        tx.pure.u64(item.shares),
+      ],
+    }),
+  );
+
+  const [primary, ...rest] = coins;
+  if (rest.length > 0) {
+    tx.mergeCoins(primary, rest);
+  }
+  tx.transferObjects([primary], sender);
   return tx;
 }
 

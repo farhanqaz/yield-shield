@@ -20,10 +20,11 @@ import {
   buildStressTx,
   buildSyncPythMetricsTx,
   buildWithdrawTx,
+  buildWithdrawAllTx,
 } from "@/lib/transactions";
 import { volatilityBpsFromPrices } from "@/lib/pyth";
 import { EXPLORER } from "@/lib/explorer";
-import { buildSmartSaveTx } from "@/lib/smart-save";
+import { buildSmartSaveTx, SMART_SAVE_GAS_BUFFER_MIST } from "@/lib/smart-save";
 import { useReceipt, storeReceiptId, clearReceiptId } from "@/hooks/useReceipt";
 import { usePythPrice } from "@/hooks/usePythPrice";
 import { useVault } from "@/hooks/useVault";
@@ -32,13 +33,19 @@ import { ScoreGauge } from "./score-gauge";
 const PYTH_REF_KEY = "yield-shield-pyth-ref-usd";
 
 function findCreatedReceiptId(
-  objectChanges: Array<{ type: string; objectType?: string; objectId?: string }> | undefined,
+  objectChanges: Array<{
+    type?: string;
+    objectType?: string;
+    objectId?: string;
+  }> | undefined,
 ): string | null {
   if (!objectChanges) return null;
   for (const change of objectChanges) {
+    const type = change.type ?? "";
+    const objectType = change.objectType ?? "";
     if (
-      change.type === "created" &&
-      change.objectType?.includes("ShieldReceipt") &&
+      (type === "created" || type === "mutated") &&
+      objectType.includes("ShieldReceipt") &&
       change.objectId
     ) {
       return change.objectId;
@@ -51,22 +58,24 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
   const account = useCurrentAccount();
   const client = useSuiClient();
   const queryClient = useQueryClient();
-  const { mutate: signAndExecute, isPending } = useSignAndExecuteTransaction({
-    execute: async ({ bytes, signature }) =>
-      client.executeTransactionBlock({
-        transactionBlock: bytes,
-        signature,
-        options: { showObjectChanges: true, showEffects: true },
-      }),
-  });
+  const { mutate: signAndExecute, isPending } = useSignAndExecuteTransaction();
 
   const { vault, isPending: vaultLoading } = useVault();
-  const { receiptId, shares, hasReceipt, refreshStoredReceipt } = useReceipt(
+  const { receipts, receiptId, shares, hasPosition, isLoading: receiptLoading, refreshReceipt, syncReceiptFromChain } = useReceipt(
     account?.address,
   );
   const { data: pyth, isLoading: pythLoading } = usePythPrice();
 
   const [amount, setAmount] = useState(defaultAmount);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+
+  useEffect(() => {
+    if (hasPosition) {
+      setWithdrawAmount((Number(shares) / 1e9).toFixed(4));
+    } else {
+      setWithdrawAmount("");
+    }
+  }, [hasPosition, shares]);
   const [txStatus, setTxStatus] = useState<string | null>(null);
   const [txDigest, setTxDigest] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -90,16 +99,18 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
   const score = vault?.score ?? 100;
   const status = (vault?.status ?? 0) as 0 | 1 | 2;
   const statusColor = SHIELD_STATUS[status].color;
-  const emergencyRecommended = status >= 1 && hasReceipt;
+  const emergencyRecommended = status >= 1 && hasPosition;
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ["suix_getObject"] });
-    queryClient.invalidateQueries({ queryKey: ["suix_getOwnedObjects"] });
+    queryClient.invalidateQueries({ queryKey: ["sui-client"] });
   };
 
   const runTx = (
     build: () => ReturnType<typeof buildDepositTx>,
-    onSuccess?: (result: { objectChanges?: unknown[] }) => void,
+    onSuccess?: (
+      digest: string,
+      objectChanges?: Parameters<typeof findCreatedReceiptId>[0],
+    ) => void,
   ) => {
     if (!account) return;
     setError(null);
@@ -109,21 +120,42 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
     signAndExecute(
       { transaction: build() },
       {
-        onSuccess: (result) => {
+        onSuccess: async (result) => {
           setTxDigest(result.digest);
           setTxStatus(`Confirmed: ${result.digest.slice(0, 16)}…`);
-          onSuccess?.(result as { objectChanges?: unknown[] });
+
+          let objectChanges: Parameters<typeof findCreatedReceiptId>[0];
+          try {
+            const details = await client.getTransactionBlock({
+              digest: result.digest,
+              options: { showObjectChanges: true },
+            });
+            objectChanges = details.objectChanges as Parameters<
+              typeof findCreatedReceiptId
+            >[0];
+          } catch {
+            objectChanges = undefined;
+          }
+
+          onSuccess?.(result.digest, objectChanges);
           invalidate();
+          void refreshReceipt();
         },
         onError: (e) => {
-          setError(e.message);
+          const msg =
+            e.message === "Unexpected error"
+              ? "Transaction failed — try a smaller amount (keep ~0.02 SUI for gas) or use Direct vault deposit."
+              : e.message === "Could not parse effects from transaction result."
+                ? "Transaction may have succeeded — refresh the page and check your wallet balance."
+                : e.message;
+          setError(msg);
           setTxStatus(null);
         },
       },
     );
   };
 
-  const handleSmartSave = () => {
+  const handleSmartSave = async () => {
     if (!account) return;
     const mist = BigInt(Math.floor(parseFloat(amount) * Number(MIST_PER_SUI)));
     if (mist <= BigInt(0)) {
@@ -131,37 +163,112 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
       return;
     }
 
-    const vaultBps = CONFIG.smartSaveVaultBps;
-
     if (CONFIG.enableNavi) {
       setError("NAVI composable PTB is mainnet-only. Use Smart Save on testnet.");
       return;
     }
 
+    try {
+      const { totalBalance } = await client.getBalance({ owner: account.address });
+      const balance = BigInt(totalBalance);
+      if (mist + SMART_SAVE_GAS_BUFFER_MIST > balance) {
+        setError(
+          `Need ~${(Number(mist + SMART_SAVE_GAS_BUFFER_MIST) / 1e9).toFixed(3)} SUI total (amount + gas buffer). Lower the amount or add testnet SUI.`,
+        );
+        return;
+      }
+    } catch {
+      // balance check failed — still attempt tx
+    }
+
     runTx(
       () =>
         buildSmartSaveTx(mist, account.address, {
-          vaultRatioBps: vaultBps,
-          receiptId: hasReceipt && receiptId ? receiptId : undefined,
+          vaultRatioBps: CONFIG.smartSaveVaultBps,
+          receiptId: receiptId ?? undefined,
         }),
-      (result) => {
-        const id = findCreatedReceiptId(
-          result.objectChanges as Parameters<typeof findCreatedReceiptId>[0],
-        );
+      async (_digest, objectChanges) => {
+        let id = findCreatedReceiptId(objectChanges);
+        if (!id) {
+          const synced = await syncReceiptFromChain();
+          id = synced[0]?.id ?? null;
+        }
         if (id) {
-          storeReceiptId(id);
-          refreshStoredReceipt();
+          storeReceiptId(account.address, id);
+          await refreshReceipt();
         }
       },
     );
   };
 
-  const handleEmergencyExit = () => {
-    if (!account || !receiptId || shares <= BigInt(0)) return;
-    runTx(() => buildWithdrawTx(shares, receiptId, account.address), () => {
-      clearReceiptId();
-      refreshStoredReceipt();
-    });
+  const handleWithdraw = async () => {
+    if (!account) return;
+    setError(null);
+
+    const active = receipts.length > 0 ? receipts : await syncReceiptFromChain();
+    if (active.length === 0) {
+      setError("No vault position found — deposit first.");
+      return;
+    }
+
+    const total = active.reduce((s, r) => s + r.shares, 0n);
+    const withdrawMist = BigInt(
+      Math.floor(parseFloat(withdrawAmount || "0") * Number(MIST_PER_SUI)),
+    );
+    if (withdrawMist <= 0n || withdrawMist > total) {
+      setError(`Enter 0.001 – ${(Number(total) / 1e9).toFixed(4)} SUI`);
+      return;
+    }
+
+    // Withdraw all if amount equals total (may span multiple receipts)
+    if (withdrawMist === total) {
+      runTx(
+        () =>
+          buildWithdrawAllTx(
+            active.map((r) => ({ receiptId: r.id, shares: r.shares })),
+            account.address,
+          ),
+        () => {
+          clearReceiptId(account.address);
+          void refreshReceipt();
+        },
+      );
+      return;
+    }
+
+    const primary = active[0];
+    if (withdrawMist > primary.shares) {
+      setError("Partial withdraw > largest receipt — use Emergency Exit for full amount.");
+      return;
+    }
+
+    runTx(
+      () => buildWithdrawTx(withdrawMist, primary.id, account.address),
+      () => void refreshReceipt(),
+    );
+  };
+
+  const handleEmergencyExit = async () => {
+    if (!account) return;
+    setError(null);
+
+    const active = receipts.length > 0 ? receipts : await syncReceiptFromChain();
+    if (active.length === 0) {
+      setError("No vault balance to withdraw.");
+      return;
+    }
+
+    runTx(
+      () =>
+        buildWithdrawAllTx(
+          active.map((r) => ({ receiptId: r.id, shares: r.shares })),
+          account.address,
+        ),
+      () => {
+        clearReceiptId(account.address);
+        void refreshReceipt();
+      },
+    );
   };
 
   const handleSyncPyth = () => {
@@ -216,9 +323,18 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
           <div className="mt-1 flex justify-between text-xs text-[var(--muted)]">
             <span>Your position</span>
             <span>
-              {hasReceipt ? `${(Number(shares) / 1e9).toFixed(4)} SUI` : "None"}
+              {hasPosition
+                ? `${(Number(shares) / 1e9).toFixed(4)} SUI`
+                : receiptLoading
+                  ? "Loading…"
+                  : "None"}
             </span>
           </div>
+          {receipts.length > 1 && (
+            <p className="mt-1 text-[10px] text-[var(--muted)]">
+              {receipts.length} active receipts — total shown above
+            </p>
+          )}
         </div>
 
         {depositsBlocked && (
@@ -243,24 +359,58 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
           </p>
         ) : (
           <div className="flex flex-col gap-3">
-            {hasReceipt && (
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={handleEmergencyExit}
-                className="rounded-xl px-4 py-4 text-sm font-bold text-white shadow-lg transition disabled:opacity-40"
-                style={{
-                  backgroundColor: emergencyRecommended
-                    ? "var(--paused)"
-                    : "#b91c1c",
-                  boxShadow: emergencyRecommended
-                    ? `0 0 24px ${statusColor}55`
-                    : undefined,
-                }}
-              >
-                {isPending ? "Signing…" : "Emergency Exit — withdraw all (PTB)"}
-              </button>
-            )}
+            <section className="rounded-xl border border-[var(--border)] bg-[var(--bg)] p-4">
+              <h3 className="text-sm font-medium">Withdraw from vault</h3>
+              <p className="mt-1 text-xs text-[var(--muted)]">
+                Pull SUI from your ShieldReceipt back to wallet (always allowed,
+                even when Paused).
+              </p>
+
+              {hasPosition ? (
+                <div className="mt-3 flex flex-col gap-2">
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span className="text-[var(--muted)]">Withdraw amount (SUI)</span>
+                    <input
+                      type="number"
+                      min="0.001"
+                      step="0.01"
+                      max={(Number(shares) / 1e9).toString()}
+                      value={withdrawAmount}
+                      onChange={(e) => setWithdrawAmount(e.target.value)}
+                      className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 outline-none focus:border-[var(--safe)]"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => void handleWithdraw()}
+                    className="rounded-xl border border-[var(--border)] px-4 py-3 text-sm font-semibold"
+                  >
+                    {isPending ? "Signing…" : "Withdraw to wallet"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={handleEmergencyExit}
+                    className="rounded-xl px-4 py-3 text-sm font-bold text-white"
+                    style={{
+                      backgroundColor: emergencyRecommended
+                        ? "var(--paused)"
+                        : "#b91c1c",
+                      boxShadow: emergencyRecommended
+                        ? `0 0 24px ${statusColor}55`
+                        : undefined,
+                    }}
+                  >
+                    Emergency Exit — withdraw all (PTB)
+                  </button>
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-[var(--muted)]">
+                  No vault position yet. Use Smart Save or deposit below.
+                </p>
+              )}
+            </section>
 
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-[var(--muted)]">Deposit amount (SUI)</span>
@@ -300,16 +450,18 @@ export function VaultPanel({ defaultAmount = "0.1" }: { defaultAmount?: string }
                     setError("Enter a valid amount");
                     return;
                   }
-                  if (hasReceipt && receiptId) {
+                  if (hasPosition && receiptId) {
                     runTx(() => buildDepositIntoReceiptTx(mist, receiptId));
                   } else {
-                    runTx(() => buildDepositTx(mist, account.address), (result) => {
-                      const id = findCreatedReceiptId(
-                        result.objectChanges as Parameters<typeof findCreatedReceiptId>[0],
-                      );
+                    runTx(() => buildDepositTx(mist, account.address), async (_digest, objectChanges) => {
+                      let id = findCreatedReceiptId(objectChanges);
+                      if (!id) {
+                        const synced = await syncReceiptFromChain();
+                        id = synced[0]?.id ?? null;
+                      }
                       if (id) {
-                        storeReceiptId(id);
-                        refreshStoredReceipt();
+                        storeReceiptId(account.address, id);
+                        await refreshReceipt();
                       }
                     });
                   }
