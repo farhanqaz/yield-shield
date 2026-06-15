@@ -38,7 +38,6 @@ CALL_OUT=$(sui client call \
 VAULT_ID=$(echo "$CALL_OUT" | jq -r '.objectChanges[] | select(.objectType | contains("Vault")) | select(.type=="created") | .objectId' | head -1)
 ADMIN_CAP_ID=$(echo "$CALL_OUT" | jq -r '.objectChanges[] | select(.objectType | contains("AdminCap")) | .objectId' | head -1)
 
-# shared object shows as mutated sometimes
 if [ -z "$VAULT_ID" ] || [ "$VAULT_ID" = "null" ]; then
   VAULT_ID=$(echo "$CALL_OUT" | jq -r '.objectChanges[] | select(.objectType | contains("Vault")) | .objectId' | head -1)
 fi
@@ -48,9 +47,13 @@ NEXT_PUBLIC_PACKAGE_ID=$PACKAGE_ID
 NEXT_PUBLIC_VAULT_ID=$VAULT_ID
 NEXT_PUBLIC_ADMIN_CAP_ID=$ADMIN_CAP_ID
 NEXT_PUBLIC_COIN_TYPE=0x2::sui::SUI
+NEXT_PUBLIC_SMART_SAVE_VAULT_BPS=8500
+NEXT_PUBLIC_ENABLE_NAVI=false
+NEXT_PUBLIC_SUI_NETWORK=testnet
 EOF
 
 echo ""
 echo "Wrote $ENV_FILE"
 echo "Restart Next.js: cd app && npm run dev"
+echo "Copy the same env vars to Vercel → Settings → Environment Variables"
 cat "$ENV_FILE"
